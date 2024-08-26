@@ -52,6 +52,9 @@ echo "Total frames determined: $TOTAL_FRAMES"
 # Extract the first and last frames from the video if needed
 if [ -z "$START_IMAGE" ]; then
     START_IMAGE="$CYG_TEMP_DIR/first_frame.png"
+    if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
+        START_IMAGE=$(cygpath -w "$START_IMAGE")
+    fi
     ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,0)" -vsync vfr "$START_IMAGE" >> "$LOG_FILE" 2>&1
     if [ ! -f "$START_IMAGE" ]; then
         echo "Error: Failed to extract the first frame. See the log file for details: $LOG_FILE"
@@ -63,6 +66,9 @@ fi
 if [ -z "$END_IMAGE" ]; then
     END_IMAGE="$CYG_TEMP_DIR/last_frame.png"
     LAST_FRAME_NUM=$((TOTAL_FRAMES - 1))
+    if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
+        END_IMAGE=$(cygpath -w "$END_IMAGE")
+    fi
     ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$LAST_FRAME_NUM)" -vsync vfr "$END_IMAGE" >> "$LOG_FILE" 2>&1
     if [ ! -f "$END_IMAGE" ]; then
         echo "Error: Failed to extract the last frame. See the log file for details: $LOG_FILE"
