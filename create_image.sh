@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # Ensure that the script takes exactly 3 arguments
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <before_image.png> <after_image.png> <video.mp4>"
+if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
+    echo "Usage: $0 <video.mp4> [before_image.png] [after_image.png]"
     exit 1
 fi
 
 # Assign command line arguments to variables
-START_IMAGE="$1"
-END_IMAGE="$2"
-VIDEO_FILE="$3"
+VIDEO_FILE="$1"
+START_IMAGE="$2"
+END_IMAGE="$3"
 CYG_TEMP_DIR="/tmp/temp_frames_$$"  # Cygwin version of TEMP_DIR
 LOG_FILE="/tmp/ffmpeg_log_$$.log"
 NUM_FRAMES=8
@@ -19,9 +19,13 @@ FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
 if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
     # Convert Cygwin paths to Windows paths if it's the Windows-native version
     echo "Detected Windows-native ffmpeg."
-    START_IMAGE=$(cygpath -w "$START_IMAGE")
-    END_IMAGE=$(cygpath -w "$END_IMAGE")
     VIDEO_FILE=$(cygpath -w "$VIDEO_FILE")
+    if [ -n "$START_IMAGE" ]; then
+        START_IMAGE=$(cygpath -w "$START_IMAGE")
+    fi
+    if [ -n "$END_IMAGE" ]; then
+        END_IMAGE=$(cygpath -w "$END_IMAGE")
+    fi
     WIN_TEMP_DIR=$(cygpath -w "$CYG_TEMP_DIR")  # Windows version of TEMP_DIR
     OUTPUT_IMAGE=$(cygpath -w "${VIDEO_FILE%.*}_montage.png")
 else
@@ -32,6 +36,27 @@ fi
 # Create a unique temporary directory for the frames
 mkdir -p "$CYG_TEMP_DIR"
 echo "Temporary directory created: $CYG_TEMP_DIR"
+
+# Extract the first and last frames from the video if needed
+if [ -z "$START_IMAGE" ]; then
+    START_IMAGE="$CYG_TEMP_DIR/first_frame.png"
+    ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,0)" -vsync vfr "$START_IMAGE" >> "$LOG_FILE" 2>&1
+    if [ ! -f "$START_IMAGE" ]; then
+        echo "Error: Failed to extract the first frame. See the log file for details: $LOG_FILE"
+        exit 1
+    fi
+    echo "Extracted first frame as START_IMAGE."
+fi
+
+if [ -z "$END_IMAGE" ]; then
+    END_IMAGE="$CYG_TEMP_DIR/last_frame.png"
+    ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of csv=p=0 "$VIDEO_FILE" | head -n 1))" -vsync vfr "$END_IMAGE" >> "$LOG_FILE" 2>&1
+    if [ ! -f "$END_IMAGE" ]; then
+        echo "Error: Failed to extract the last frame. See the log file for details: $LOG_FILE"
+        exit 1
+    fi
+    echo "Extracted last frame as END_IMAGE."
+fi
 
 # Get the width and height of the START_IMAGE before proceeding using ffprobe
 echo "Getting dimensions of the START_IMAGE..."
