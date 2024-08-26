@@ -88,10 +88,10 @@ if [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ]; then
     exit 1
 fi
 
-# Calculate the frame numbers using linear interpolation
+# Calculate the frame numbers using integer arithmetic
 FRAME_NUMS=()
 for i in $(seq 0 $((TOTAL_IMAGES - 1))); do
-    FRAME_NUM=$(printf "%.0f" "$(echo "$i * ($TOTAL_FRAMES - 1) / ($TOTAL_IMAGES - 1)" | bc -l)")
+    FRAME_NUM=$(( i * (TOTAL_FRAMES - 1) / (TOTAL_IMAGES - 1) ))
     FRAME_NUMS+=($FRAME_NUM)
 done
 
