@@ -72,9 +72,20 @@ for i in $(seq 1 $NUM_FRAMES); do
     echo "Extracted frame $i."
 done
 
-# Resize the extracted frames to match the size of the START_IMAGE
+# Get the width and height of the START_IMAGE
+echo "Getting dimensions of the START_IMAGE..."
 START_IMAGE_WIDTH=$(ffmpeg -v error -i "$START_IMAGE" -vf "showinfo" -f null - 2>&1 | grep "Stream #0:0" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f1)
 START_IMAGE_HEIGHT=$(ffmpeg -v error -i "$START_IMAGE" -vf "showinfo" -f null - 2>&1 | grep "Stream #0:0" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f2)
+
+# Debugging output to verify dimensions
+echo "START_IMAGE_WIDTH: $START_IMAGE_WIDTH"
+echo "START_IMAGE_HEIGHT: $START_IMAGE_HEIGHT"
+
+if [ -z "$START_IMAGE_WIDTH" ] || [ -z "$START_IMAGE_HEIGHT" ]; then
+    echo "Error: Could not determine the dimensions of the START_IMAGE."
+    echo "See the log file for more details: $LOG_FILE"
+    exit 1
+fi
 
 echo "Resizing frames..."
 for i in $(seq 1 $NUM_FRAMES); do
@@ -82,6 +93,7 @@ for i in $(seq 1 $NUM_FRAMES); do
     if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
         OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
     fi
+    echo "Resizing frame $i..."
     ffmpeg -loglevel error -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME" >> "$LOG_FILE" 2>&1
     if [ $? -ne 0 ]; then
         echo "Error: Failed to resize frame $i. See the log file for details: $LOG_FILE"
