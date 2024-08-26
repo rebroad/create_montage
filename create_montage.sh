@@ -32,6 +32,12 @@ COLS=$(echo "$GRID_DIMENSION" | cut -d'x' -f1)
 ROWS=$(echo "$GRID_DIMENSION" | cut -d'x' -f2)
 TOTAL_IMAGES=$((COLS * ROWS))
 
+# Ensure that the total number of images is at least 2
+if [ "$TOTAL_IMAGES" -lt 2 ]; then
+    echo "Error: The grid must allow for at least 2 images."
+    exit 1
+fi
+
 TEMP_DIR="/tmp/temp_frames_$$"
 LOG_FILE="/tmp/ffmpeg_log_$$.log"
 OUTPUT_IMAGE="${VIDEO_FILE%.*}_montage.png"
