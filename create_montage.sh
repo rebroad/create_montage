@@ -88,9 +88,15 @@ if [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ]; then
     exit 1
 fi
 
-# Calculate frame interval to get evenly spaced frames
-INTERVAL=$((TOTAL_FRAMES / (TOTAL_IMAGES - 1)))
-echo "Frame interval calculated: $INTERVAL"
+# Calculate the frame numbers using linear interpolation
+FRAME_NUMS=()
+for i in $(seq 0 $((TOTAL_IMAGES - 1))); do
+    FRAME_NUM=$(printf "%.0f" "$(echo "$i * ($TOTAL_FRAMES - 1) / ($TOTAL_IMAGES - 1)" | bc -l)")
+    FRAME_NUMS+=($FRAME_NUM)
+done
+
+# Output calculated frames
+echo "Calculated frame numbers: ${FRAME_NUMS[*]}"
 
 # Initialize the resize variable
 RESIZE_FILTER=""
@@ -119,21 +125,22 @@ fi
 # Extract and resize frames using ffmpeg, logging any errors
 echo "Extracting frames..."
 inputs=""
-for i in $(seq 0 $((TOTAL_IMAGES - 1))); do
+for i in "${!FRAME_NUMS[@]}"; do
     if [ "$i" -eq 0 ] && [ -n "$START_IMAGE" ]; then
         inputs+="-i $(convert_path "$START_IMAGE") "
+        echo "Using START_IMAGE as frame 0."
     elif [ "$i" -eq $((TOTAL_IMAGES - 1)) ] && [ -n "$END_IMAGE" ]; then
         inputs+="-i $(convert_path "$END_IMAGE") "
+        echo "Using END_IMAGE as the last frame."
     else
-        FRAME_NUM=$((i * INTERVAL))
-        [ $i -eq $((TOTAL_IMAGES - 1)) ] && FRAME_NUM=$((TOTAL_FRAMES - 1))  # Ensure we get the last frame
+        FRAME_NUM=${FRAME_NUMS[$i]}
         OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
+        echo "Extracting frame $i (frame number $FRAME_NUM) and resizing."
         ffmpeg -loglevel error -y -i "$(convert_path "$VIDEO_FILE")" -vf "select=eq(n\,${FRAME_NUM})${RESIZE_FILTER}" -vsync vfr "$(convert_path "$OUTPUT_FRAME")" >> "$LOG_FILE" 2>&1
         if [ ! -f "$OUTPUT_FRAME" ]; then
             echo "Error: Failed to extract and resize frame $i. See the log file for details: $LOG_FILE"
             exit 1
         fi
-        echo "Extracted and resized frame $i."
         inputs+="-i $(convert_path "$OUTPUT_FRAME") "
     fi
 done
