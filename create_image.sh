@@ -31,9 +31,9 @@ fi
 mkdir -p "$TEMP_DIR"
 echo "Temporary directory created: $TEMP_DIR"
 
-# Get the width and height of the START_IMAGE before proceeding
+# Get the width and height of the START_IMAGE before proceeding using ffprobe
 echo "Getting dimensions of the START_IMAGE..."
-ffmpeg -v error -i "$START_IMAGE" -show_entries stream=width,height -of csv=p=0:s=x >> "$LOG_FILE" 2>&1
+ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$START_IMAGE" >> "$LOG_FILE" 2>&1
 START_IMAGE_DIMENSIONS=$(grep -oP '^\d+x\d+' "$LOG_FILE" | head -n 1)
 START_IMAGE_WIDTH=$(echo "$START_IMAGE_DIMENSIONS" | cut -d'x' -f1)
 START_IMAGE_HEIGHT=$(echo "$START_IMAGE_DIMENSIONS" | cut -d'x' -f2)
