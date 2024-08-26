@@ -1,15 +1,37 @@
 #!/bin/bash
 
-# Ensure that the script takes exactly 1 to 3 arguments
-if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
-    echo "Usage: $0 <video.mp4> [before_image.png] [after_image.png]"
+# Ensure the script takes 1 to 4 arguments
+if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
+    echo "Usage: $0 <video.mp4> [NxN] [before_image.png] [after_image.png]"
     exit 1
 fi
 
-# Assign command line arguments to variables
-VIDEO_FILE="$1"
-START_IMAGE="$2"
-END_IMAGE="$3"
+# Default grid dimension
+GRID_DIMENSION="5x2"
+
+# Parse arguments for grid dimension and file names
+for arg in "$@"; do
+    if [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]]; then
+        GRID_DIMENSION="$arg"
+    elif [[ -z "$VIDEO_FILE" ]]; then
+        VIDEO_FILE="$arg"
+    elif [[ -z "$START_IMAGE" ]]; then
+        START_IMAGE="$arg"
+    elif [[ -z "$END_IMAGE" ]]; then
+        END_IMAGE="$arg"
+    fi
+done
+
+if [ -z "$VIDEO_FILE" ]; then
+    echo "Error: Video file not specified."
+    exit 1
+fi
+
+# Extract columns and rows from GRID_DIMENSION
+COLS=$(echo "$GRID_DIMENSION" | cut -d'x' -f1)
+ROWS=$(echo "$GRID_DIMENSION" | cut -d'x' -f2)
+TOTAL_IMAGES=$((COLS * ROWS))
+
 TEMP_DIR="/tmp/temp_frames_$$"
 LOG_FILE="/tmp/ffmpeg_log_$$.log"
 OUTPUT_IMAGE="${VIDEO_FILE%.*}_montage.png"
@@ -28,7 +50,7 @@ convert_path() {
     fi
 }
 
-# Create a unique temporary directory for the frames
+# Create temporary directory for frame extraction
 mkdir -p "$TEMP_DIR"
 touch "$LOG_FILE" # Create the log file explicitly
 echo "Temporary directory created: $TEMP_DIR"
@@ -55,13 +77,9 @@ if ! [[ "$TOTAL_FRAMES" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-# Calculate frame interval
-echo "Debug: Arithmetic expression: $((TOTAL_FRAMES / 9))"
-INTERVAL=$((TOTAL_FRAMES / 9))
+# Calculate frame interval to get evenly spaced frames
+INTERVAL=$((TOTAL_FRAMES / (TOTAL_IMAGES - 1)))
 echo "Frame interval calculated: $INTERVAL"
-
-START_LOOP=1
-END_LOOP=8
 
 # Initialize the resize variable
 RESIZE_FILTER=""
@@ -87,18 +105,21 @@ if [ ! -z "$START_IMAGE" ]; then
     fi
 fi
 
-[ -z "$START_IMAGE" ] && START_LOOP=0 && START_IMAGE="$TEMP_DIR/frame_0.png"
-[ -z "$END_IMAGE" ] && END_LOOP=9 && END_IMAGE="$TEMP_DIR/frame_9.png"
+START_LOOP=1
+END_LOOP=$((TOTAL_IMAGES - 2))
 
+[ -z "$START_IMAGE" ] && START_LOOP=0 && START_IMAGE="$TEMP_DIR/frame_0.png"
+[ -z "$END_IMAGE" ] && END_LOOP=$((TOTAL_IMAGES - 1)) && END_IMAGE="$TEMP_DIR/frame_$((TOTAL_IMAGES - 1)).png"
+
+# Extract and resize frames using ffmpeg, logging any errors
 echo "Extracting frames..."
 inputs=""
 [ $START_LOOP -eq 1 ] && inputs="-i \"$(convert_path "$START_IMAGE")\" "
-
 for i in $(seq $START_LOOP $END_LOOP); do
     FRAME_NUM=$((i * INTERVAL))
-    [ $i -eq 9 ] && FRAME_NUM=$((TOTAL_FRAMES - 1))  # Ensure we get the last frame
+    [ $i -eq $((TOTAL_IMAGES - 1)) ] && FRAME_NUM=$((TOTAL_FRAMES - 1))  # Ensure we get the last frame
     OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
-    ffmpeg -loglevel error -y -i "$(convert_path "$VIDEO_FILE")" -vf "select=eq(n\,$FRAME_NUM)${RESIZE_FILTER}" -vsync vfr "$(convert_path "$OUTPUT_FRAME")" >> "$LOG_FILE" 2>&1
+    ffmpeg -loglevel error -y -i "$(convert_path "$VIDEO_FILE")" -vf "select=eq(n\,${FRAME_NUM})${RESIZE_FILTER}" -vsync vfr "$(convert_path "$OUTPUT_FRAME")" >> "$LOG_FILE" 2>&1
     if [ ! -f "$OUTPUT_FRAME" ]; then
         echo "Error: Failed to extract and resize frame $i. See the log file for details: $LOG_FILE"
         exit 1
@@ -108,7 +129,7 @@ for i in $(seq $START_LOOP $END_LOOP); do
 done
 
 # Add END_IMAGE to inputs only if it wasn't processed in the loop
-[ $END_LOOP -eq 8 ] && inputs="$inputs -i \"$(convert_path "$END_IMAGE")\""
+[ $END_LOOP -eq $((TOTAL_IMAGES - 2)) ] && inputs="$inputs -i \"$(convert_path "$END_IMAGE")\""
 
 # Check if all frames exist before creating the montage
 if ! ls "$TEMP_DIR"/frame_*.png &>/dev/null; then
@@ -116,18 +137,31 @@ if ! ls "$TEMP_DIR"/frame_*.png &>/dev/null; then
     exit 1
 fi
 
-echo "Creating montage..."
-# Create a montage using ffmpeg (alternative to ImageMagick)
-ffmpeg -loglevel error -y $inputs -filter_complex \
-  "[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5[top]; \
-   [5:v][6:v][7:v][8:v][9:v]hstack=inputs=5[bottom]; \
-   [top][bottom]vstack=inputs=2[v]" \
-  -map "[v]" "$(convert_path "$OUTPUT_IMAGE")" >> "$LOG_FILE" 2>&1
+# Build filter_complex string for creating montage
+FILTER_COMPLEX=""
+for (( row=0; row<ROWS; row++ )); do
+    for (( col=0; col<COLS; col++ )); do
+        FILTER_COMPLEX+="[$((row * COLS + col)):v]"
+    done
+    FILTER_COMPLEX+="hstack=inputs=$COLS[row$row]; "
+done
 
-if [ $? -eq 0 ]; then
-    echo "Final image saved as $OUTPUT_IMAGE"
+# Stack all rows vertically to create the final montage
+for (( row=0; row<ROWS; row++ )); do
+    FILTER_COMPLEX+="[row$row]"
+done
+FILTER_COMPLEX+="vstack=inputs=$ROWS[v]"
+
+echo "Creating montage..." | tee -a "$LOG_FILE"
+# Create the montage with ffmpeg
+ffmpeg -loglevel error -y $inputs -filter_complex "$FILTER_COMPLEX" -map "[v]" "$(convert_path "$OUTPUT_IMAGE")" >> "$LOG_FILE" 2>&1
+
+# Verify if the output image is created successfully and log the result
+if [ $? -eq 0 ] && [ -f "$OUTPUT_IMAGE" ]; then
+    echo "Final image saved as $OUTPUT_IMAGE" | tee -a "$LOG_FILE"
 else
-    echo "Error: Failed to create montage. See the log file for details: $LOG_FILE"
+    echo "Error: Failed to create montage." | tee -a "$LOG_FILE"
+    exit 1
 fi
 
 # Clean up temporary files
