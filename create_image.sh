@@ -10,7 +10,7 @@ fi
 START_IMAGE="$1"
 END_IMAGE="$2"
 VIDEO_FILE="$3"
-TEMP_DIR="temp_frames"
+TEMP_DIR="/tmp/temp_frames"
 NUM_FRAMES=8
 
 # Check ffmpeg version to determine if it's a Windows-native version
