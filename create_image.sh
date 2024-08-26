@@ -50,7 +50,8 @@ fi
 
 # Get the total number of frames in the video
 echo "Running ffmpeg to get total number of frames..."
-ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null >> "$LOG_FILE" 2>&1
+echo "Video file being used: $VIDEO_FILE" >> "$LOG_FILE"
+ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - 2>> "$LOG_FILE" >> "$LOG_FILE"
 
 # Now parse the log file to find the last "frame=" line
 TOTAL_FRAMES=$(grep -oP 'frame=\s*\K\d+' "$LOG_FILE" | tail -1)
