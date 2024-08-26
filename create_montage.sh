@@ -56,7 +56,6 @@ touch "$LOG_FILE" # Create the log file explicitly
 echo "Temporary directory created: $TEMP_DIR"
 
 # Get the total number of frames in the video
-echo "Running ffprobe to get total number of frames..."
 TOTAL_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VIDEO_FILE")")
 
 # Show frame information to the user
@@ -114,7 +113,7 @@ END_LOOP=$((TOTAL_IMAGES - 2))
 # Extract and resize frames using ffmpeg, logging any errors
 echo "Extracting frames..."
 inputs=""
-[ $START_LOOP -eq 1 ] && inputs="-i \"$(convert_path "$START_IMAGE")\" "
+[ $START_LOOP -eq 1 ] && inputs="-i $(convert_path "$START_IMAGE") "
 for i in $(seq $START_LOOP $END_LOOP); do
     FRAME_NUM=$((i * INTERVAL))
     [ $i -eq $((TOTAL_IMAGES - 1)) ] && FRAME_NUM=$((TOTAL_FRAMES - 1))  # Ensure we get the last frame
@@ -129,7 +128,7 @@ for i in $(seq $START_LOOP $END_LOOP); do
 done
 
 # Add END_IMAGE to inputs only if it wasn't processed in the loop
-[ $END_LOOP -eq $((TOTAL_IMAGES - 2)) ] && inputs="$inputs -i \"$(convert_path "$END_IMAGE")\""
+[ $END_LOOP -eq $((TOTAL_IMAGES - 2)) ] && inputs="$inputs -i $(convert_path "$END_IMAGE")"
 
 # Check if all frames exist before creating the montage
 if ! ls "$TEMP_DIR"/frame_*.png &>/dev/null; then
@@ -139,18 +138,33 @@ fi
 
 # Build filter_complex string for creating montage
 FILTER_COMPLEX=""
-for (( row=0; row<ROWS; row++ )); do
+if [ "$ROWS" -eq 1 ]; then
+    # If there's only one row, stack images horizontally
     for (( col=0; col<COLS; col++ )); do
-        FILTER_COMPLEX+="[$((row * COLS + col)):v]"
+        FILTER_COMPLEX+="[$col:v]"
     done
-    FILTER_COMPLEX+="hstack=inputs=$COLS[row$row]; "
-done
+    FILTER_COMPLEX+="hstack=inputs=$COLS[v]"
+elif [ "$COLS" -eq 1 ]; then
+    # If there's only one column, stack images vertically
+    for (( row=0; row<ROWS; row++ )); do
+        FILTER_COMPLEX+="[$row:v]"
+    done
+    FILTER_COMPLEX+="vstack=inputs=$ROWS[v]"
+else
+    # General case for grids with multiple rows and columns
+    for (( row=0; row<ROWS; row++ )); do
+        for (( col=0; col<COLS; col++ )); do
+            FILTER_COMPLEX+="[$((row * COLS + col)):v]"
+        done
+        FILTER_COMPLEX+="hstack=inputs=$COLS[row$row]; "
+    done
 
-# Stack all rows vertically to create the final montage
-for (( row=0; row<ROWS; row++ )); do
-    FILTER_COMPLEX+="[row$row]"
-done
-FILTER_COMPLEX+="vstack=inputs=$ROWS[v]"
+    # Stack all rows vertically to create the final montage
+    for (( row=0; row<ROWS; row++ )); do
+        FILTER_COMPLEX+="[row$row]"
+    done
+    FILTER_COMPLEX+="vstack=inputs=$ROWS[v]"
+fi
 
 echo "Creating montage..." | tee -a "$LOG_FILE"
 # Create the montage with ffmpeg
