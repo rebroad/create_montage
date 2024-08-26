@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Ensure that the script takes exactly 3 arguments
+# Ensure that the script takes exactly 1 to 3 arguments
 if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
     echo "Usage: $0 <video.mp4> [before_image.png] [after_image.png]"
     exit 1
@@ -37,6 +37,18 @@ fi
 mkdir -p "$CYG_TEMP_DIR"
 echo "Temporary directory created: $CYG_TEMP_DIR"
 
+# Get the total number of frames in the video
+echo "Running ffprobe to get total number of frames..."
+TOTAL_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$VIDEO_FILE")
+
+# Show frame information to the user
+if [ -z "$TOTAL_FRAMES" ]; then
+    echo "Error: Could not determine total number of frames in the video."
+    echo "See the log file for more details: $LOG_FILE"
+    exit 1
+fi
+echo "Total frames determined: $TOTAL_FRAMES"
+
 # Extract the first and last frames from the video if needed
 if [ -z "$START_IMAGE" ]; then
     START_IMAGE="$CYG_TEMP_DIR/first_frame.png"
@@ -50,7 +62,8 @@ fi
 
 if [ -z "$END_IMAGE" ]; then
     END_IMAGE="$CYG_TEMP_DIR/last_frame.png"
-    ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of csv=p=0 "$VIDEO_FILE" | head -n 1))" -vsync vfr "$END_IMAGE" >> "$LOG_FILE" 2>&1
+    LAST_FRAME_NUM=$((TOTAL_FRAMES - 1))
+    ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$LAST_FRAME_NUM)" -vsync vfr "$END_IMAGE" >> "$LOG_FILE" 2>&1
     if [ ! -f "$END_IMAGE" ]; then
         echo "Error: Failed to extract the last frame. See the log file for details: $LOG_FILE"
         exit 1
@@ -74,22 +87,6 @@ if [ -z "$START_IMAGE_WIDTH" ] || [ -z "$START_IMAGE_HEIGHT" ]; then
     echo "See the log file for more details: $LOG_FILE"
     exit 1
 fi
-
-# Get the total number of frames in the video
-echo "Running ffmpeg to get total number of frames..."
-echo "Video file being used: $VIDEO_FILE" >> "$LOG_FILE"
-ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - 2>> "$LOG_FILE" >> "$LOG_FILE"
-
-# Now parse the log file to find the last "frame=" line
-TOTAL_FRAMES=$(grep -oP 'frame=\s*\K\d+' "$LOG_FILE" | tail -1)
-
-# Show frame information to the user
-if [ -z "$TOTAL_FRAMES" ]; then
-    echo "Error: Could not determine total number of frames in the video."
-    echo "See the log file for more details: $LOG_FILE"
-    exit 1
-fi
-echo "Total frames determined: $TOTAL_FRAMES"
 
 # Calculate frame interval to get 8 evenly spaced frames, ignoring first and last frame
 INTERVAL=$((TOTAL_FRAMES / (NUM_FRAMES + 1)))
