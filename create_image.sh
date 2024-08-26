@@ -37,8 +37,10 @@ exec 1>"$LOG_FILE" 2>&1  # Redirect stdout and stderr to log file
 
 # Get the total number of frames in the video
 echo "Running ffmpeg to get total number of frames..."
-ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - | tee -a "$LOG_FILE"
-TOTAL_FRAMES=$(grep "frame=" "$LOG_FILE" | tail -1 | sed 's/.*frame=\([0-9]*\).*/\1/')
+ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null -
+
+# Now parse the log file to find the last "frame=" line
+TOTAL_FRAMES=$(grep -oP 'frame=\s*\K\d+' "$LOG_FILE" | tail -1)
 
 exec 1>&3 2>&4  # Restore original stdout and stderr
 
