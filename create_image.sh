@@ -83,8 +83,9 @@ if [ -z "$START_IMAGE_WIDTH" ] || [ -z "$START_IMAGE_HEIGHT" ]; then
     exit 1
 fi
 
-# Calculate frame interval to get 8 evenly spaced frames, ignoring first and last frame
-INTERVAL=$((TOTAL_FRAMES / 9)) # correct?
+# Calculate frame interval
+# We want 9 intervals for 10 images (9 spaces between 10 points)
+INTERVAL=$((TOTAL_FRAMES / 9))
 echo "Frame interval calculated: $INTERVAL"
 
 START_LOOP=1
@@ -93,9 +94,11 @@ END_LOOP=8
 [ -z "$END_IMAGE" ] && END_LOOP=9 && END_IMAGE="$TEMP_DIR/frame_9.png"
 
 echo "Extracting frames..."
+inputs=""
 [ $START_LOOP -eq 1 ] && inputs="-i \"$(convert_path "$START_IMAGE")\" "
 for i in $(seq $START_LOOP $END_LOOP); do
     FRAME_NUM=$((i * INTERVAL))
+    [ $i -eq 9 ] && FRAME_NUM=$((TOTAL_FRAMES - 1))  # Ensure we get the last frame
     OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
     ffmpeg -loglevel error -y -i $(convert_path "$VIDEO_FILE") -vf "select=eq(n\,$FRAME_NUM),scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" -vsync vfr $(convert_path "$OUTPUT_FRAME") >> "$LOG_FILE" 2>&1
     if [ ! -f "$OUTPUT_FRAME" ]; then
@@ -112,15 +115,16 @@ if ! ls "$TEMP_DIR"/frame_*.png &>/dev/null; then
     exit 1
 fi
 
+# Add END_IMAGE to inputs only if it wasn't processed in the loop
 [ $END_LOOP -eq 8 ] && inputs+="-i \"$(convert_path "$END_IMAGE")\""
 
 echo "Creating montage..."
 # Create a montage using ffmpeg (alternative to ImageMagick)
-ffmpeg -loglevel error -y $inputs -filter_complex \
+eval ffmpeg -loglevel error -y $inputs -filter_complex \
   "[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5[top]; \
    [5:v][6:v][7:v][8:v][9:v]hstack=inputs=5[bottom]; \
    [top][bottom]vstack=inputs=2[v]" \
-  -map "[v]" "$OUTPUT_IMAGE" >> "$LOG_FILE" 2>&1
+  -map "[v]" $(convert_path "$OUTPUT_IMAGE") >> "$LOG_FILE" 2>&1
 
 if [ $? -eq 0 ]; then
     echo "Final image saved as $OUTPUT_IMAGE"
