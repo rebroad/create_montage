@@ -27,9 +27,9 @@ else
     OUTPUT_IMAGE="${VIDEO_FILE%.*}_montage.png"
 fi
 
-# Redirect all output to the log file
-exec 3>&1 4>&2  # Save original stdout and stderr
-exec 1>"$LOG_FILE" 2>&1  # Redirect stdout and stderr to log file
+# Create a unique temporary directory for the frames
+mkdir -p "$TEMP_DIR"
+echo "Temporary directory created: $TEMP_DIR"
 
 # Get the width and height of the START_IMAGE before proceeding
 echo "Getting dimensions of the START_IMAGE..."
@@ -46,9 +46,9 @@ if [ -z "$START_IMAGE_WIDTH" ] || [ -z "$START_IMAGE_HEIGHT" ]; then
     exit 1
 fi
 
-# Create a unique temporary directory for the frames
-mkdir -p "$TEMP_DIR"
-echo "Temporary directory created: $TEMP_DIR"
+# Redirect stdout and stderr to the log file from this point forward
+exec 3>&1 4>&2  # Save original stdout and stderr
+exec 1>"$LOG_FILE" 2>&1  # Redirect stdout and stderr to log file
 
 # Get the total number of frames in the video
 echo "Running ffmpeg to get total number of frames..."
@@ -57,7 +57,8 @@ ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null -
 # Now parse the log file to find the last "frame=" line
 TOTAL_FRAMES=$(grep -oP 'frame=\s*\K\d+' "$LOG_FILE" | tail -1)
 
-exec 1>&3 2>&4  # Restore original stdout and stderr
+# Restore original stdout and stderr for progress messages
+exec 1>&3 2>&4
 
 # Check if total frames were determined
 if [ -z "$TOTAL_FRAMES" ]; then
@@ -95,7 +96,7 @@ for i in $(seq 1 $NUM_FRAMES); do
     fi
     echo "Resizing frame $i..."
     ffmpeg -loglevel error -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME" >> "$LOG_FILE" 2>&1
-    if [ $? -ne 0]; then
+    if [ $? -ne 0 ]; then
         echo "Error: Failed to resize frame $i. See the log file for details: $LOG_FILE"
         exit 1
     fi
