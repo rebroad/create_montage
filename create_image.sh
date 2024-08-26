@@ -33,9 +33,10 @@ echo "Temporary directory created: $TEMP_DIR"
 
 # Get the width and height of the START_IMAGE before proceeding
 echo "Getting dimensions of the START_IMAGE..."
-ffmpeg -v error -i "$START_IMAGE" -vf "showinfo" -f null >> "$LOG_FILE" 2>&1
-START_IMAGE_WIDTH=$(grep "Stream #0:0" "$LOG_FILE" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f1)
-START_IMAGE_HEIGHT=$(grep "Stream #0:0" "$LOG_FILE" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f2)
+ffmpeg -v error -i "$START_IMAGE" -show_entries stream=width,height -of csv=p=0:s=x >> "$LOG_FILE" 2>&1
+START_IMAGE_DIMENSIONS=$(grep -oP '^\d+x\d+' "$LOG_FILE" | head -n 1)
+START_IMAGE_WIDTH=$(echo "$START_IMAGE_DIMENSIONS" | cut -d'x' -f1)
+START_IMAGE_HEIGHT=$(echo "$START_IMAGE_DIMENSIONS" | cut -d'x' -f2)
 
 # Show dimensions to the user for verification
 echo "START_IMAGE_WIDTH: $START_IMAGE_WIDTH"
