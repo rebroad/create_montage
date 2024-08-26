@@ -73,8 +73,10 @@ echo "Extracting frames..."
 for i in $(seq 1 $NUM_FRAMES); do
     FRAME_NUM=$((i * INTERVAL))
     OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
+    TEMP_FRAME="$TEMP_DIR/frame_${i}_resized.png"
     if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
         OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
+        TEMP_FRAME=$(cygpath -w "$TEMP_FRAME")
     fi
     ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$FRAME_NUM)" -vsync vfr "$OUTPUT_FRAME" >> "$LOG_FILE" 2>&1
     if [ ! -f "$OUTPUT_FRAME" ]; then
@@ -82,20 +84,14 @@ for i in $(seq 1 $NUM_FRAMES); do
         exit 1
     fi
     echo "Extracted frame $i."
-done
 
-echo "Resizing frames..."
-for i in $(seq 1 $NUM_FRAMES); do
-    OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
-    if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
-        OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
-    fi
     echo "Resizing frame $i..."
-    ffmpeg -loglevel error -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME" >> "$LOG_FILE" 2>&1
+    ffmpeg -loglevel error -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$TEMP_FRAME" >> "$LOG_FILE" 2>&1
     if [ $? -ne 0 ]; then
         echo "Error: Failed to resize frame $i. See the log file for details: $LOG_FILE"
         exit 1
     fi
+    mv "$TEMP_FRAME" "$OUTPUT_FRAME"  # Replace the original frame with the resized one
     echo "Resized frame $i."
 done
 
