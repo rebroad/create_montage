@@ -82,6 +82,12 @@ if ! [[ "$TOTAL_FRAMES" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
+# Check if the requested number of images exceeds the total frames in the video
+if [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ]; then
+    echo "Error: The requested grid ($GRID_DIMENSION) requires more images ($TOTAL_IMAGES) than there are frames in the video ($TOTAL_FRAMES)."
+    exit 1
+fi
+
 # Calculate frame interval to get evenly spaced frames
 INTERVAL=$((TOTAL_FRAMES / (TOTAL_IMAGES - 1)))
 echo "Frame interval calculated: $INTERVAL"
@@ -110,31 +116,27 @@ if [ ! -z "$START_IMAGE" ]; then
     fi
 fi
 
-START_LOOP=1
-END_LOOP=$((TOTAL_IMAGES - 2))
-
-[ -z "$START_IMAGE" ] && START_LOOP=0 && START_IMAGE="$TEMP_DIR/frame_0.png"
-[ -z "$END_IMAGE" ] && END_LOOP=$((TOTAL_IMAGES - 1)) && END_IMAGE="$TEMP_DIR/frame_$((TOTAL_IMAGES - 1)).png"
-
 # Extract and resize frames using ffmpeg, logging any errors
 echo "Extracting frames..."
 inputs=""
-[ $START_LOOP -eq 1 ] && inputs="-i $(convert_path "$START_IMAGE") "
-for i in $(seq $START_LOOP $END_LOOP); do
-    FRAME_NUM=$((i * INTERVAL))
-    [ $i -eq $((TOTAL_IMAGES - 1)) ] && FRAME_NUM=$((TOTAL_FRAMES - 1))  # Ensure we get the last frame
-    OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
-    ffmpeg -loglevel error -y -i "$(convert_path "$VIDEO_FILE")" -vf "select=eq(n\,${FRAME_NUM})${RESIZE_FILTER}" -vsync vfr "$(convert_path "$OUTPUT_FRAME")" >> "$LOG_FILE" 2>&1
-    if [ ! -f "$OUTPUT_FRAME" ]; then
-        echo "Error: Failed to extract and resize frame $i. See the log file for details: $LOG_FILE"
-        exit 1
+for i in $(seq 0 $((TOTAL_IMAGES - 1))); do
+    if [ "$i" -eq 0 ] && [ -n "$START_IMAGE" ]; then
+        inputs+="-i $(convert_path "$START_IMAGE") "
+    elif [ "$i" -eq $((TOTAL_IMAGES - 1)) ] && [ -n "$END_IMAGE" ]; then
+        inputs+="-i $(convert_path "$END_IMAGE") "
+    else
+        FRAME_NUM=$((i * INTERVAL))
+        [ $i -eq $((TOTAL_IMAGES - 1)) ] && FRAME_NUM=$((TOTAL_FRAMES - 1))  # Ensure we get the last frame
+        OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
+        ffmpeg -loglevel error -y -i "$(convert_path "$VIDEO_FILE")" -vf "select=eq(n\,${FRAME_NUM})${RESIZE_FILTER}" -vsync vfr "$(convert_path "$OUTPUT_FRAME")" >> "$LOG_FILE" 2>&1
+        if [ ! -f "$OUTPUT_FRAME" ]; then
+            echo "Error: Failed to extract and resize frame $i. See the log file for details: $LOG_FILE"
+            exit 1
+        fi
+        echo "Extracted and resized frame $i."
+        inputs+="-i $(convert_path "$OUTPUT_FRAME") "
     fi
-    echo "Extracted and resized frame $i."
-    inputs+="-i $(convert_path "$OUTPUT_FRAME") "
 done
-
-# Add END_IMAGE to inputs only if it wasn't processed in the loop
-[ $END_LOOP -eq $((TOTAL_IMAGES - 2)) ] && inputs="$inputs -i $(convert_path "$END_IMAGE")"
 
 # Check if all frames exist before creating the montage
 if ! ls "$TEMP_DIR"/frame_*.png &>/dev/null; then
