@@ -6,19 +6,20 @@ if [ "$#" -ne 3 ]; then
     exit 1
 fi
 
-# Assign command line arguments to variables
-START_IMAGE="$1"
-END_IMAGE="$2"
-VIDEO_FILE="$3"
-TEMP_DIR="temp_frames"
+# Convert Cygwin paths to Windows paths
+START_IMAGE=$(cygpath -w "$1")
+END_IMAGE=$(cygpath -w "$2")
+VIDEO_FILE=$(cygpath -w "$3")
+TEMP_DIR=$(cygpath -w "temp_frames")
 NUM_FRAMES=8
 
 # Generate output filename based on video filename
 BASENAME=$(basename "$VIDEO_FILE" .mp4)
 OUTPUT_IMAGE="${BASENAME}_montage.png"
+OUTPUT_IMAGE=$(cygpath -w "$OUTPUT_IMAGE")
 
 # Create a temporary directory for the frames
-mkdir -p "$TEMP_DIR"
+mkdir -p temp_frames
 
 # Get the total number of frames in the video
 TOTAL_FRAMES=$(ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - 2>&1 | grep "frame=" | tail -1 | sed 's/.*frame=\([0-9]*\).*/\1/')
@@ -35,6 +36,7 @@ echo "Extracting frames..."
 for i in $(seq 1 $NUM_FRAMES); do
     FRAME_NUM=$((i * INTERVAL))
     OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
+    OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
     ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$FRAME_NUM)" -vsync vfr "$OUTPUT_FRAME"
     if [ ! -f "$OUTPUT_FRAME" ]; then
         echo "Error: Failed to extract frame $i."
@@ -50,6 +52,7 @@ START_IMAGE_HEIGHT=$(ffmpeg -v error -i "$START_IMAGE" -vf "showinfo" -f null - 
 echo "Resizing frames..."
 for i in $(seq 1 $NUM_FRAMES); do
     OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
+    OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
     ffmpeg -loglevel error -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME"
     if [ $? -ne 0 ]; then
         echo "Error: Failed to resize frame $i."
@@ -77,6 +80,5 @@ else
 fi
 
 # Clean up temporary files
-rm -r "$TEMP_DIR"
-
+rm -r temp_frames
 
