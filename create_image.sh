@@ -33,10 +33,11 @@ echo "Temporary directory created: $TEMP_DIR"
 
 # Get the width and height of the START_IMAGE before proceeding
 echo "Getting dimensions of the START_IMAGE..."
-START_IMAGE_WIDTH=$(ffmpeg -v error -i "$START_IMAGE" -vf "showinfo" -f null - 2>&1 | grep "Stream #0:0" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f1)
-START_IMAGE_HEIGHT=$(ffmpeg -v error -i "$START_IMAGE" -vf "showinfo" -f null - 2>&1 | grep "Stream #0:0" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f2)
+ffmpeg -v error -i "$START_IMAGE" -vf "showinfo" -f null >> "$LOG_FILE" 2>&1
+START_IMAGE_WIDTH=$(grep "Stream #0:0" "$LOG_FILE" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f1)
+START_IMAGE_HEIGHT=$(grep "Stream #0:0" "$LOG_FILE" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f2)
 
-# Debugging output to verify dimensions
+# Show dimensions to the user for verification
 echo "START_IMAGE_WIDTH: $START_IMAGE_WIDTH"
 echo "START_IMAGE_HEIGHT: $START_IMAGE_HEIGHT"
 
@@ -46,21 +47,14 @@ if [ -z "$START_IMAGE_WIDTH" ] || [ -z "$START_IMAGE_HEIGHT" ]; then
     exit 1
 fi
 
-# Redirect stdout and stderr to the log file from this point forward
-exec 3>&1 4>&2  # Save original stdout and stderr
-exec 1>"$LOG_FILE" 2>&1  # Redirect stdout and stderr to log file
-
 # Get the total number of frames in the video
 echo "Running ffmpeg to get total number of frames..."
-ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null -
+ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null >> "$LOG_FILE" 2>&1
 
 # Now parse the log file to find the last "frame=" line
 TOTAL_FRAMES=$(grep -oP 'frame=\s*\K\d+' "$LOG_FILE" | tail -1)
 
-# Restore original stdout and stderr for progress messages
-exec 1>&3 2>&4
-
-# Check if total frames were determined
+# Show frame information to the user
 if [ -z "$TOTAL_FRAMES" ]; then
     echo "Error: Could not determine total number of frames in the video."
     echo "See the log file for more details: $LOG_FILE"
