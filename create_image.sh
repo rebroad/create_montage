@@ -10,13 +10,14 @@ fi
 START_IMAGE="$1"
 END_IMAGE="$2"
 VIDEO_FILE="$3"
-TEMP_DIR="/tmp/temp_frames"
+TEMP_DIR="/tmp/temp_frames_$$"
 NUM_FRAMES=8
 
 # Check ffmpeg version to determine if it's a Windows-native version
 FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
 if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
     # Convert Cygwin paths to Windows paths if it's the Windows-native version
+    echo "Detected Windows-native ffmpeg."
     START_IMAGE=$(cygpath -w "$START_IMAGE")
     END_IMAGE=$(cygpath -w "$END_IMAGE")
     VIDEO_FILE=$(cygpath -w "$VIDEO_FILE")
@@ -25,18 +26,24 @@ else
     OUTPUT_IMAGE="${VIDEO_FILE%.*}_montage.png"
 fi
 
-# Create a temporary directory for the frames
+# Create a unique temporary directory for the frames
 mkdir -p "$TEMP_DIR"
+echo "Temporary directory created: $TEMP_DIR"
 
 # Get the total number of frames in the video
-TOTAL_FRAMES=$(ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - 2>&1 | grep "frame=" | tail -1 | sed 's/.*frame=\([0-9]*\).*/\1/')
+echo "Running ffmpeg to get total number of frames..."
+TOTAL_FRAMES=$(ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - 2>&1)
+echo "ffmpeg output: $TOTAL_FRAMES"
+TOTAL_FRAMES=$(echo "$TOTAL_FRAMES" | grep "frame=" | tail -1 | sed 's/.*frame=\([0-9]*\).*/\1/')
 if [ -z "$TOTAL_FRAMES" ]; then
     echo "Error: Could not determine total number of frames in the video."
     exit 1
 fi
+echo "Total frames determined: $TOTAL_FRAMES"
 
 # Calculate frame interval to get 8 evenly spaced frames, ignoring first and last frame
 INTERVAL=$((TOTAL_FRAMES / (NUM_FRAMES + 1)))
+echo "Frame interval calculated: $INTERVAL"
 
 echo "Extracting frames..."
 # Extract 8 evenly spaced frames, skipping the first and last frames
@@ -46,7 +53,8 @@ for i in $(seq 1 $NUM_FRAMES); do
     if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
         OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
     fi
-    ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$FRAME_NUM)" -vsync vfr "$OUTPUT_FRAME"
+    echo "Extracting frame $i at frame number $FRAME_NUM..."
+    ffmpeg -loglevel debug -y -i "$VIDEO_FILE" -vf "select=eq(n\,$FRAME_NUM)" -vsync vfr "$OUTPUT_FRAME"
     if [ ! -f "$OUTPUT_FRAME" ]; then
         echo "Error: Failed to extract frame $i."
         exit 1
@@ -64,7 +72,8 @@ for i in $(seq 1 $NUM_FRAMES); do
     if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
         OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
     fi
-    ffmpeg -loglevel error -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME"
+    echo "Resizing frame $i..."
+    ffmpeg -loglevel debug -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME"
     if [ $? -ne 0 ]; then
         echo "Error: Failed to resize frame $i."
         exit 1
@@ -74,7 +83,7 @@ done
 
 echo "Creating montage..."
 # Create a montage using ffmpeg (alternative to ImageMagick)
-ffmpeg -loglevel error -y \
+ffmpeg -loglevel debug -y \
   -i "$START_IMAGE" -i "$TEMP_DIR/frame_1.png" -i "$TEMP_DIR/frame_2.png" \
   -i "$TEMP_DIR/frame_3.png" -i "$TEMP_DIR/frame_4.png" -i "$TEMP_DIR/frame_5.png" \
   -i "$TEMP_DIR/frame_6.png" -i "$TEMP_DIR/frame_7.png" -i "$TEMP_DIR/frame_8.png" \
@@ -91,5 +100,7 @@ else
 fi
 
 # Clean up temporary files
+echo "Cleaning up temporary files..."
 rm -r "$TEMP_DIR"
+echo "Temporary files deleted."
 
