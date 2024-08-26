@@ -17,12 +17,6 @@ NUM_FRAMES=8
 BASENAME=$(basename "$VIDEO_FILE" .mp4)
 OUTPUT_IMAGE="${BASENAME}_montage.png"
 
-# Check if ImageMagick is installed
-if ! command -v convert &> /dev/null || ! command -v montage &> /dev/null; then
-    echo "ImageMagick is not installed. Please install it using: apt-cyg install ImageMagick"
-    exit 1
-fi
-
 # Create a temporary directory for the frames
 mkdir -p $TEMP_DIR
 
@@ -40,13 +34,24 @@ for i in $(seq 1 $NUM_FRAMES); do
 done
 
 # Resize the extracted frames to match the size of the START_IMAGE
+START_IMAGE_WIDTH=$(ffmpeg -i "$START_IMAGE" -vf "showinfo" -f null - 2>&1 | grep "Stream #0:0" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f1)
+START_IMAGE_HEIGHT=$(ffmpeg -i "$START_IMAGE" -vf "showinfo" -f null - 2>&1 | grep "Stream #0:0" | grep -oP '\d{3,4}x\d{3,4}' | head -n 1 | cut -d'x' -f2)
+
 for i in $(seq 1 $NUM_FRAMES); do
     OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
-    convert $OUTPUT_FRAME -resize $(identify -format "%wx%h" "$START_IMAGE") $OUTPUT_FRAME
+    ffmpeg -i $OUTPUT_FRAME -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" $OUTPUT_FRAME -y
 done
 
-# Arrange the images into a 5x2 grid (START_IMAGE, 8 frames, END_IMAGE)
-montage "$START_IMAGE" $(ls $TEMP_DIR/frame_*.png | sort -V) "$END_IMAGE" -tile 5x2 -geometry +0+0 "$OUTPUT_IMAGE"
+# Create a montage using ffmpeg (alternative to ImageMagick)
+ffmpeg \
+  -i $START_IMAGE -i $TEMP_DIR/frame_1.png -i $TEMP_DIR/frame_2.png \
+  -i $TEMP_DIR/frame_3.png -i $TEMP_DIR/frame_4.png -i $TEMP_DIR/frame_5.png \
+  -i $TEMP_DIR/frame_6.png -i $TEMP_DIR/frame_7.png -i $TEMP_DIR/frame_8.png \
+  -i $END_IMAGE -filter_complex \
+  "[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5[top]; \
+   [5:v][6:v][7:v][8:v][9:v]hstack=inputs=5[bottom]; \
+   [top][bottom]vstack=inputs=2[v]" \
+  -map "[v]" $OUTPUT_IMAGE
 
 # Clean up temporary files
 rm -r $TEMP_DIR
