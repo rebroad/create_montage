@@ -10,7 +10,7 @@ fi
 START_IMAGE="$1"
 END_IMAGE="$2"
 VIDEO_FILE="$3"
-TEMP_DIR="/tmp/temp_frames_$$"
+CYG_TEMP_DIR="/tmp/temp_frames_$$"  # Cygwin version of TEMP_DIR
 LOG_FILE="/tmp/ffmpeg_log_$$.log"
 NUM_FRAMES=8
 
@@ -22,14 +22,16 @@ if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
     START_IMAGE=$(cygpath -w "$START_IMAGE")
     END_IMAGE=$(cygpath -w "$END_IMAGE")
     VIDEO_FILE=$(cygpath -w "$VIDEO_FILE")
+    WIN_TEMP_DIR=$(cygpath -w "$CYG_TEMP_DIR")  # Windows version of TEMP_DIR
     OUTPUT_IMAGE=$(cygpath -w "${VIDEO_FILE%.*}_montage.png")
 else
+    WIN_TEMP_DIR="$CYG_TEMP_DIR"
     OUTPUT_IMAGE="${VIDEO_FILE%.*}_montage.png"
 fi
 
 # Create a unique temporary directory for the frames
-mkdir -p "$TEMP_DIR"
-echo "Temporary directory created: $TEMP_DIR"
+mkdir -p "$CYG_TEMP_DIR"
+echo "Temporary directory created: $CYG_TEMP_DIR"
 
 # Get the width and height of the START_IMAGE before proceeding using ffprobe
 echo "Getting dimensions of the START_IMAGE..."
@@ -72,8 +74,8 @@ echo "Extracting frames..."
 # Extract 8 evenly spaced frames, skipping the first and last frames
 for i in $(seq 1 $NUM_FRAMES); do
     FRAME_NUM=$((i * INTERVAL))
-    OUTPUT_FRAME="$TEMP_DIR/frame_$i.png"
-    TEMP_FRAME="$TEMP_DIR/frame_${i}_resized.png"
+    OUTPUT_FRAME="$CYG_TEMP_DIR/frame_$i.png"
+    TEMP_FRAME="$CYG_TEMP_DIR/frame_${i}_resized.png"
     if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
         OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
         TEMP_FRAME=$(cygpath -w "$TEMP_FRAME")
@@ -95,12 +97,21 @@ for i in $(seq 1 $NUM_FRAMES); do
     echo "Resized frame $i."
 done
 
+# Check if all frames exist before creating the montage
+for i in $(seq 1 $NUM_FRAMES); do
+    OUTPUT_FRAME="$CYG_TEMP_DIR/frame_$i.png"
+    if [[ ! -f "$OUTPUT_FRAME" ]]; then
+        echo "Error: Frame $i does not exist. Montage creation aborted."
+        exit 1
+    fi
+done
+
 echo "Creating montage..."
 # Create a montage using ffmpeg (alternative to ImageMagick)
 ffmpeg -loglevel error -y \
-  -i "$START_IMAGE" -i "$TEMP_DIR/frame_1.png" -i "$TEMP_DIR/frame_2.png" \
-  -i "$TEMP_DIR/frame_3.png" -i "$TEMP_DIR/frame_4.png" -i "$TEMP_DIR/frame_5.png" \
-  -i "$TEMP_DIR/frame_6.png" -i "$TEMP_DIR/frame_7.png" -i "$TEMP_DIR/frame_8.png" \
+  -i "$START_IMAGE" -i "$WIN_TEMP_DIR/frame_1.png" -i "$WIN_TEMP_DIR/frame_2.png" \
+  -i "$WIN_TEMP_DIR/frame_3.png" -i "$WIN_TEMP_DIR/frame_4.png" -i "$WIN_TEMP_DIR/frame_5.png" \
+  -i "$WIN_TEMP_DIR/frame_6.png" -i "$WIN_TEMP_DIR/frame_7.png" -i "$WIN_TEMP_DIR/frame_8.png" \
   -i "$END_IMAGE" -filter_complex \
   "[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5[top]; \
    [5:v][6:v][7:v][8:v][9:v]hstack=inputs=5[bottom]; \
@@ -115,7 +126,7 @@ fi
 
 # Clean up temporary files
 echo "Cleaning up temporary files..."
-rm -r "$TEMP_DIR"
+rm -r "$CYG_TEMP_DIR"
 echo "Temporary files deleted."
 
 # Indicate where to find the log file
