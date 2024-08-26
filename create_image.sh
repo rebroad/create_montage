@@ -34,7 +34,7 @@ echo "Temporary directory created: $TEMP_DIR"
 
 # Get the total number of frames in the video
 echo "Running ffprobe to get total number of frames..."
-TOTAL_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 ${convert_path "$VIDEO_FILE")
+TOTAL_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 $(convert_path "$VIDEO_FILE"))
 
 # Show frame information to the user
 if [ -z "$TOTAL_FRAMES" ]; then
@@ -112,9 +112,7 @@ if ! ls "$TEMP_DIR"/frame_*.png &>/dev/null; then
     exit 1
 fi
 
-for i in $(seq 1 8); do
-done
-[ $END_LOOP -eq $NUM_FRAMES ] && inputs+="-i \"$(convert_path "$END_IMAGE")\""
+[ $END_LOOP -eq 8 ] && inputs+="-i \"$(convert_path "$END_IMAGE")\""
 
 echo "Creating montage..."
 # Create a montage using ffmpeg (alternative to ImageMagick)
