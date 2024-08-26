@@ -11,6 +11,7 @@ START_IMAGE="$1"
 END_IMAGE="$2"
 VIDEO_FILE="$3"
 TEMP_DIR="/tmp/temp_frames_$$"
+LOG_FILE="/tmp/ffmpeg_log_$$.log"
 NUM_FRAMES=8
 
 # Check ffmpeg version to determine if it's a Windows-native version
@@ -30,13 +31,21 @@ fi
 mkdir -p "$TEMP_DIR"
 echo "Temporary directory created: $TEMP_DIR"
 
+# Redirect all output to the log file
+exec 3>&1 4>&2  # Save original stdout and stderr
+exec 1>"$LOG_FILE" 2>&1  # Redirect stdout and stderr to log file
+
 # Get the total number of frames in the video
 echo "Running ffmpeg to get total number of frames..."
-TOTAL_FRAMES=$(ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - 2>&1)
-echo "ffmpeg output: $TOTAL_FRAMES"
-TOTAL_FRAMES=$(echo "$TOTAL_FRAMES" | grep "frame=" | tail -1 | sed 's/.*frame=\([0-9]*\).*/\1/')
+ffmpeg -i "$VIDEO_FILE" -vf "showinfo" -f null - | tee -a "$LOG_FILE"
+TOTAL_FRAMES=$(grep "frame=" "$LOG_FILE" | tail -1 | sed 's/.*frame=\([0-9]*\).*/\1/')
+
+exec 1>&3 2>&4  # Restore original stdout and stderr
+
+# Check if total frames were determined
 if [ -z "$TOTAL_FRAMES" ]; then
     echo "Error: Could not determine total number of frames in the video."
+    echo "See the log file for more details: $LOG_FILE"
     exit 1
 fi
 echo "Total frames determined: $TOTAL_FRAMES"
@@ -53,10 +62,9 @@ for i in $(seq 1 $NUM_FRAMES); do
     if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
         OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
     fi
-    echo "Extracting frame $i at frame number $FRAME_NUM..."
-    ffmpeg -loglevel debug -y -i "$VIDEO_FILE" -vf "select=eq(n\,$FRAME_NUM)" -vsync vfr "$OUTPUT_FRAME"
+    ffmpeg -loglevel error -y -i "$VIDEO_FILE" -vf "select=eq(n\,$FRAME_NUM)" -vsync vfr "$OUTPUT_FRAME" >> "$LOG_FILE" 2>&1
     if [ ! -f "$OUTPUT_FRAME" ]; then
-        echo "Error: Failed to extract frame $i."
+        echo "Error: Failed to extract frame $i. See the log file for details: $LOG_FILE"
         exit 1
     fi
     echo "Extracted frame $i."
@@ -72,10 +80,9 @@ for i in $(seq 1 $NUM_FRAMES); do
     if [[ "$FFMPEG_VERSION" == *"MSYS2"* ]]; then
         OUTPUT_FRAME=$(cygpath -w "$OUTPUT_FRAME")
     fi
-    echo "Resizing frame $i..."
-    ffmpeg -loglevel debug -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME"
+    ffmpeg -loglevel error -y -i "$OUTPUT_FRAME" -vf "scale=$START_IMAGE_WIDTH:$START_IMAGE_HEIGHT" "$OUTPUT_FRAME" >> "$LOG_FILE" 2>&1
     if [ $? -ne 0 ]; then
-        echo "Error: Failed to resize frame $i."
+        echo "Error: Failed to resize frame $i. See the log file for details: $LOG_FILE"
         exit 1
     fi
     echo "Resized frame $i."
@@ -83,7 +90,7 @@ done
 
 echo "Creating montage..."
 # Create a montage using ffmpeg (alternative to ImageMagick)
-ffmpeg -loglevel debug -y \
+ffmpeg -loglevel error -y \
   -i "$START_IMAGE" -i "$TEMP_DIR/frame_1.png" -i "$TEMP_DIR/frame_2.png" \
   -i "$TEMP_DIR/frame_3.png" -i "$TEMP_DIR/frame_4.png" -i "$TEMP_DIR/frame_5.png" \
   -i "$TEMP_DIR/frame_6.png" -i "$TEMP_DIR/frame_7.png" -i "$TEMP_DIR/frame_8.png" \
@@ -91,16 +98,19 @@ ffmpeg -loglevel debug -y \
   "[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5[top]; \
    [5:v][6:v][7:v][8:v][9:v]hstack=inputs=5[bottom]; \
    [top][bottom]vstack=inputs=2[v]" \
-  -map "[v]" "$OUTPUT_IMAGE"
+  -map "[v]" "$OUTPUT_IMAGE" >> "$LOG_FILE" 2>&1
 
 if [ $? -eq 0 ]; then
     echo "Final image saved as $OUTPUT_IMAGE"
 else
-    echo "Error: Failed to create montage."
+    echo "Error: Failed to create montage. See the log file for details: $LOG_FILE"
 fi
 
 # Clean up temporary files
 echo "Cleaning up temporary files..."
 rm -r "$TEMP_DIR"
 echo "Temporary files deleted."
+
+# Indicate where to find the log file
+echo "Log file saved as: $LOG_FILE"
 
