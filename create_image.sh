@@ -62,8 +62,6 @@ echo "Frame interval calculated: $INTERVAL"
 
 START_LOOP=1
 END_LOOP=8
-[ -z "$START_IMAGE" ] && START_LOOP=0 && START_IMAGE="$TEMP_DIR/frame_0.png"
-[ -z "$END_IMAGE" ] && END_LOOP=9 && END_IMAGE="$TEMP_DIR/frame_9.png"
 
 # Initialize the resize variable
 RESIZE_FILTER=""
@@ -89,6 +87,9 @@ if [ ! -z "$START_IMAGE" ]; then
     fi
 fi
 
+[ -z "$START_IMAGE" ] && START_LOOP=0 && START_IMAGE="$TEMP_DIR/frame_0.png"
+[ -z "$END_IMAGE" ] && END_LOOP=9 && END_IMAGE="$TEMP_DIR/frame_9.png"
+
 echo "Extracting frames..."
 inputs=""
 [ $START_LOOP -eq 1 ] && inputs="-i \"$(convert_path "$START_IMAGE")\" "
@@ -103,7 +104,7 @@ for i in $(seq $START_LOOP $END_LOOP); do
         exit 1
     fi
     echo "Extracted and resized frame $i."
-    inputs+="-i \"$(convert_path "$OUTPUT_FRAME")\" "
+    inputs+="-i $(convert_path "$OUTPUT_FRAME") "
 done
 
 # Add END_IMAGE to inputs only if it wasn't processed in the loop
@@ -117,7 +118,7 @@ fi
 
 echo "Creating montage..."
 # Create a montage using ffmpeg (alternative to ImageMagick)
-eval ffmpeg -loglevel error -y $inputs -filter_complex \
+ffmpeg -loglevel error -y $inputs -filter_complex \
   "[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5[top]; \
    [5:v][6:v][7:v][8:v][9:v]hstack=inputs=5[bottom]; \
    [top][bottom]vstack=inputs=2[v]" \
