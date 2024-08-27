@@ -1,14 +1,14 @@
 #!/bin/bash
 
-[ "$#" -lt 1 ] || [ "$#" -gt 4 ] && { echo "Usage: $0 <video.mp4> [NxN | 16:9] [before_image.png] [after_image.png]"; exit 1; }
+[ "$#" -lt 1 ] || [ "$#" -gt 4 ] && { echo "Usage: $0 <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png]"; exit 1; }
 
-GRID="5x2"
-USE_16_9=false
+GRID=""
+ASPECT_RATIO=""
 
 for arg; do
-    if [[ "$arg" == "16:9" ]]; then
-        USE_16_9=true
-    elif [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]]; then
+    if [[ "$arg" =~ ^[0-9]+:[0-9]+$ ]]; then
+        ASPECT_RATIO="$arg"
+    elif [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]] || [[ "$arg" =~ ^x[0-9]+$ ]] || [[ "$arg" =~ ^[0-9]+x$ ]]; then
         GRID="$arg"
     elif [[ "$arg" =~ \.mp4$ ]]; then
         VID="$arg"
@@ -19,12 +19,6 @@ done
 
 [ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
 [ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
-
-COLS=${GRID%x*}
-ROWS=${GRID#*x}
-TOTAL=$((COLS * ROWS))
-
-[ "$TOTAL" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
 
 TEMP="/tmp/temp_frames_$$"
 LOG="/tmp/ffmpeg_log_$$.log"
@@ -49,7 +43,6 @@ FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream
 FRAMES=$(clean_num "$FRAMES")
 echo "Total frames determined: $FRAMES" | tee -a "$LOG"
 [[ "$FRAMES" =~ ^[0-9]+$ ]] || { echo "Error: FRAMES is not a valid number: $FRAMES"; exit 1; }
-[ "$TOTAL" -gt "$FRAMES" ] && { echo "Error: Grid ($GRID) requires more images ($TOTAL) than video frames ($FRAMES)."; exit 1; }
 
 get_dimensions() {
     echo $(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$(convert_path "$1")")
@@ -71,38 +64,57 @@ echo "Frame dimensions: $FRAME_WIDTH by $FRAME_HEIGHT"
 FRAME_WIDTH=$(clean_num "$FRAME_WIDTH")
 FRAME_HEIGHT=$(clean_num "$FRAME_HEIGHT")
 
-if [ -n "$USE_16_9" ]; then
-    SCREEN_RATIO=1.777777778
-    MIN_UNUSED_SPACE=1000000
+if [ -n "$ASPECT_RATIO" ]; then
+    IFS=':' read -r WIDTH HEIGHT <<< "$ASPECT_RATIO"
+    TARGET_RATIO=$(echo "scale=10; $WIDTH/$HEIGHT" | bc -l)
+    echo "Target aspect ratio: $ASPECT_RATIO ($TARGET_RATIO)"
+fi
 
-    echo "Searching for optimal grid for 16:9"
+if [ -n "$GRID" ]; then
+    if [[ "$GRID" =~ ^x[0-9]+$ ]]; then
+        ROWS=${GRID#x}
+        COLS=$(echo "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH" | bc)
+    elif [[ "$GRID" =~ ^[0-9]+x$ ]]; then
+        COLS=${GRID%x}
+        ROWS=$(echo "scale=0; ($COLS * $FRAME_WIDTH) / ($TARGET_RATIO * $FRAME_HEIGHT)" | bc)
+    else
+        COLS=${GRID%x*}
+        ROWS=${GRID#*x}
+    fi
+    echo "Using grid: ${COLS}x${ROWS}"
+elif [ -n "$ASPECT_RATIO" ]; then
+    MIN_UNUSED_SPACE=1000000
+    echo "Searching for optimal grid for $ASPECT_RATIO aspect ratio"
     for ((y=1; y<=FRAMES; y++)); do
-        x=$(( (FRAMES + y - 1) / y )) # correct?!
+        x=$(( (FRAMES + y - 1) / y ))
 
         GRID_WIDTH=$(( x * FRAME_WIDTH ))
         GRID_HEIGHT=$(( y * FRAME_HEIGHT ))
         GRID_RATIO=$(echo "scale=10; ${GRID_WIDTH}/${GRID_HEIGHT}" | bc -l)
-        echo "GRID_RATIO=$GRID_RATIO" | tee -a "$LOG"
+        echo "Grid ${x}x${y}, ratio: $GRID_RATIO" | tee -a "$LOG"
 
-        if (( $(echo "$GRID_RATIO > $SCREEN_RATIO" | bc -l) )); then
-            UNUSED_SPACE=$(echo "scale=10; $GRID_WIDTH / $SCREEN_RATIO - $GRID_HEIGHT" | bc -l)
-        else
-            UNUSED_SPACE=$(echo "scale=10; $GRID_HEIGHT * $SCREEN_RATIO - $GRID_WIDTH" | bc -l)
-        fi
+        UNUSED_SPACE=$(echo "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2" | bc -l)
 
-        # Use < below to get get fewest images or <= to get most
         if (( $(echo "$UNUSED_SPACE < $MIN_UNUSED_SPACE" | bc -l) )); then
             MIN_UNUSED_SPACE=$UNUSED_SPACE
             COLS=$x
             ROWS=$y
-            echo "Best grid is ${COLS}x${ROWS}"
+            echo "Best grid so far: ${COLS}x${ROWS}"
         else
             break
         fi
     done
-    echo "Optimal grid for 16:9 aspect ratio: ${COLS}x${ROWS}"
-    TOTAL=$((COLS * ROWS)) # Again
+    echo "Optimal grid for aspect ratio $ASPECT_RATIO aspect ratio: ${COLS}x${ROWS}"
+else
+    echo "No grid or aspect ratio specified. Using default 5x2 grid."
+    COLS=5
+    ROWS=2
 fi
+
+echo DEBUG COLS=${COLS} ROWS=${ROWS}
+TOTAL=$((COLS * ROWS))
+[ "$TOTAL" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
+[ "$TOTAL" -gt "$FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL) than video frames ($FRAMES)."; exit 1; }
 
 for ((i=0; i<TOTAL; i++)); do
     FRAME_NUMS+=($((i * (FRAMES - 1) / (TOTAL - 1))))
