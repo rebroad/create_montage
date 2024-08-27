@@ -11,8 +11,14 @@ done
 [ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
 [ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
 
-# new check to be certain the file is actually a 'totally correct' video file
-VIDEO_CHECK=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$VIDEO_FILE" 2>/dev/null)
+# New check: Verify if the specified file is actually a video
+VIDEO_CHECK=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$VID" 2>/dev/null)
+
+# Debug line to check ffprobe output
+echo "ffprobe output: '$VIDEO_CHECK'"
+
+# Trim any extra whitespace from VIDEO_CHECK
+VIDEO_CHECK=$(echo "$VIDEO_CHECK" | xargs)
 
 if [ "$VIDEO_CHECK" != "video" ]; then
     echo "Error: The specified file is not a video or cannot be read."
