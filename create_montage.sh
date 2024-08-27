@@ -61,14 +61,20 @@ echo "Frame numbers: ${FRAME_NUMS[*]}"
 }
 
 inputs=""
+echo "Extracting frames..."
 for i in "${!FRAME_NUMS[@]}"; do
     if [ "$i" -eq 0 ] && [ -n "$START" ]; then
         inputs+="-i $(convert_path "$START") "
+        echo "Using START_IMAGE as frame 0."
     elif [ "$i" -eq $((TOTAL - 1)) ] && [ -n "$END" ]; then
         inputs+="-i $(convert_path "$END") "
+        echo "Using END_IMAGE as the last frame."
     else
+        FRAME_NUM=${FRAME_NUMS[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
-        ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUMS[$i]})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
+        PERCENT=$((FRAME_NUM * 100 / (FRAMES - 1)))
+        echo "Extracting frame $i (${PERCENT}% of video) and resizing."
+        ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         [ ! -f "$OUT_FRAME" ] && { echo "Error: Failed to extract frame $i. See $LOG"; exit 1; }
         inputs+="-i $(convert_path "$OUT_FRAME") "
     fi
