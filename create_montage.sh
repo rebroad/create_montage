@@ -17,6 +17,20 @@ done
 [ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
 [ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
 
+# New check: Verify if the specified file is actually a video
+VIDEO_CHECK=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$VID" 2>/dev/null)
+
+# Debug line to check ffprobe output
+echo "ffprobe output: '$VIDEO_CHECK'"
+
+# Trim any extra whitespace from VIDEO_CHECK
+VIDEO_CHECK=$(echo "$VIDEO_CHECK" | xargs)
+
+if [ "$VIDEO_CHECK" != "video" ]; then
+    echo "Error: The specified file is not a video or cannot be read."
+    exit 1
+fi
+
 COLS=${GRID%x*}
 ROWS=${GRID#*x}
 TOTAL=$((COLS * ROWS))
@@ -29,19 +43,47 @@ OUT="${VID%.*}_montage.png"
 
 mkdir -p "$TEMP" && touch "$LOG"
 
-FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
-[[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && echo "Detected Windows-native ffmpeg."
+# Broader check if running in a Windows environment using $OSTYPE
+# NOTE - at some point get rid of references to cygpath
+if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+    echo "Detected Windows environment."
 
-convert_path() {
-    [[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && cygpath -w "$1" || echo "$1"
-}
+    convert_path() {
+    # If running in a Windows-like environment, not using cygpath as it may not be available in other shell environments
+    if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+        # Check if the path starts with a Unix-style root (e.g., /c/)
+        if [[ "$1" =~ ^/([a-zA-Z])/ ]]; then
+            # Convert Unix-style /c/path to Windows-style C:\path
+            drive_letter=${BASH_REMATCH[1]}
+            windows_path="${drive_letter}:\\${1:3}"
+            windows_path="${windows_path//\//\\}" # Replace forward slashes with backslashes
+            echo "$windows_path"
+        else
+            # Assume it's already a Windows path
+            echo "$1"
+        fi
+    else
+        # If not in a Windows environment, return the path unchanged
+        echo "$1"
+    fi
+    }
+else
+    # If not on Windows shell, no path conversion needed
+    convert_path() {
+        echo "$1"
+    }
+fi
 
 echo "Attempting to determine total frames for video: $VID" | tee -a "$LOG"
-FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -count_packets -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>> "$LOG")
+# get the frames without having to use external grep command, rely on ffprobe functionality.
+FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>/dev/null)
+
+# If ffprobe failed to determine frame count, fallback to alternative method
 if [ $? -ne 0 ] || [ -z "$FRAMES" ]; then
     echo "Error: Could not determine total frames using ffprobe. Attempting alternative method..." | tee -a "$LOG"
-    FRAMES=$(ffmpeg -i "$(convert_path "$VID")" -map 0:v:0 -c copy -f null -progress pipe:1 2>/dev/null | grep -oP "(?<=frame=)\d+")
+    FRAMES=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "$(convert_path "$VID")" 2>/dev/null)
 fi
+
 
 [ -z "$FRAMES" ] && { echo "Error: Failed to determine total frames. See $LOG for details."; exit 1; }
 FRAMES=$(echo "$FRAMES" | tr -d '[:space:]')
