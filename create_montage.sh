@@ -1,11 +1,14 @@
 #!/bin/bash
 
-[ "$#" -lt 1 ] || [ "$#" -gt 4 ] && { echo "Usage: $0 <video.mp4> [NxN] [before_image.png] [after_image.png]"; exit 1; }
+[ "$#" -lt 1 ] || [ "$#" -gt 4 ] && { echo "Usage: $0 <video.mp4> [NxN | 16:9] [before_image.png] [after_image.png]"; exit 1; }
 
 GRID="5x2"
+USE_16_9=false
 
 for arg; do
-    if [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]]; then
+    if [[ "$arg" == "16:9" ]]; then
+        USE_16_9=true
+    elif [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]]; then
         GRID="$arg"
     elif [[ "$arg" =~ \.mp4$ ]]; then
         VID="$arg"
@@ -26,7 +29,6 @@ TOTAL=$((COLS * ROWS))
 TEMP="/tmp/temp_frames_$$"
 LOG="/tmp/ffmpeg_log_$$.log"
 OUT="${VID%.*}_montage.png"
-
 mkdir -p "$TEMP" && touch "$LOG"
 
 FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
@@ -38,19 +40,15 @@ convert_path() {
 
 echo "Attempting to determine total frames for video: $VID" | tee -a "$LOG"
 FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>> "$LOG")
-
 [ -z "$FRAMES" ] && { echo "Error: Failed to determine total frames. See $LOG for details."; exit 1; }
 FRAMES=$(echo "$FRAMES" | tr -d '[:space:]')
-
 echo "Total frames determined: $FRAMES" | tee -a "$LOG"
-
 [[ "$FRAMES" =~ ^[0-9]+$ ]] || { echo "Error: FRAMES is not a valid number: $FRAMES"; exit 1; }
 [ "$TOTAL" -gt "$FRAMES" ] && { echo "Error: Grid ($GRID) requires more images ($TOTAL) than video frames ($FRAMES)."; exit 1; }
 
 for ((i=0; i<TOTAL; i++)); do
     FRAME_NUMS+=($((i * (FRAMES - 1) / (TOTAL - 1))))
 done
-
 echo "Frame numbers: ${FRAME_NUMS[*]}"
 
 [ -n "$START" ] && {
