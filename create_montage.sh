@@ -5,7 +5,13 @@
 GRID="5x2"
 
 for arg; do
-    [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]] && GRID="$arg" || { [ -z "$VID" ] && VID="$arg" || { [ -z "$START" ] && START="$arg" || END="$arg"; }; }
+    if [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]]; then
+        GRID="$arg"
+    elif [[ "$arg" =~ \.mp4$ ]]; then
+        VID="$arg"
+    else
+        [ -z "$START" ] && START="$arg" || END="$arg"
+    fi
 done
 
 [ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
