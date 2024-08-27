@@ -69,11 +69,15 @@ else
 fi
 
 echo "Attempting to determine total frames for video: $VID" | tee -a "$LOG"
-FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -count_packets -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>> "$LOG")
+# get the frames without having to use external grep command, rely on ffprobe functionality.
+FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>/dev/null)
+
+# If ffprobe failed to determine frame count, fallback to alternative method
 if [ $? -ne 0 ] || [ -z "$FRAMES" ]; then
     echo "Error: Could not determine total frames using ffprobe. Attempting alternative method..." | tee -a "$LOG"
-    FRAMES=$(ffmpeg -i "$(convert_path "$VID")" -map 0:v:0 -c copy -f null -progress pipe:1 2>/dev/null | grep -oP "(?<=frame=)\d+")
+    FRAMES=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=noprint_wrappers=1:nokey=1 "$(convert_path "$VID")" 2>/dev/null)
 fi
+
 
 [ -z "$FRAMES" ] && { echo "Error: Failed to determine total frames. See $LOG for details."; exit 1; }
 FRAMES=$(echo "$FRAMES" | tr -d '[:space:]')
