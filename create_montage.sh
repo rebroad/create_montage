@@ -37,12 +37,25 @@ OUT="${VID%.*}_montage.png"
 
 mkdir -p "$TEMP" && touch "$LOG"
 
-FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
-[[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && echo "Detected Windows-native ffmpeg."
+# Broader check if running in a Windows environment using $OSTYPE
+# NOTE - at some point get rid of references to cygpath
+if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+    echo "Detected Windows environment."
 
-convert_path() {
-    [[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && cygpath -w "$1" || echo "$1"
-}
+    convert_path() {
+        # Convert Unix-style paths to Windows-style paths if needed
+        if command -v cygpath &> /dev/null; then
+            cygpath -w "$1"
+        else
+            echo "$1"
+        fi
+    }
+else
+    # If not on Windows shell, no path conversion needed
+    convert_path() {
+        echo "$1"
+    }
+fi
 
 echo "Attempting to determine total frames for video: $VID" | tee -a "$LOG"
 FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -count_packets -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>> "$LOG")
