@@ -76,18 +76,11 @@ if [ -n "$USE_16_9" ]; then
     MIN_UNUSED_SPACE=1000000
 
     echo "Searching for optimal grid for 16:9"
-    for ((x=1; x<=FRAMES; x++)); do
-        echo before we set y
-        y=$(( (FRAMES + x - 1) / x )) # correct?!
-        echo y equals $y
+    for ((y=1; y<=FRAMES; y++)); do
+        x=$(( (FRAMES + y - 1) / y )) # correct?!
 
-        echo before we set GRID_WIDTH
         GRID_WIDTH=$(( x * FRAME_WIDTH ))
-        echo before we set GRID_HEIGHT
-        echo GRID_WIDTH equals $GRID_WIDTH
         GRID_HEIGHT=$(( y * FRAME_HEIGHT ))
-        echo GRID_HEIGHT equals $GRID_HEIGHT
-        echo "Calculating GRID_RATIO, GRID_WIDTH=$GRID_WIDTH, GRID_HEIGHT=$GRID_HEIGHT" | tee -a "$LOG"
         GRID_RATIO=$(echo "scale=10; ${GRID_WIDTH}/${GRID_HEIGHT}" | bc -l)
         echo "GRID_RATIO=$GRID_RATIO" | tee -a "$LOG"
 
@@ -97,16 +90,17 @@ if [ -n "$USE_16_9" ]; then
             UNUSED_SPACE=$(echo "scale=10; $GRID_HEIGHT * $SCREEN_RATIO - $GRID_WIDTH" | bc -l)
         fi
 
-        # Use < below to get get fewest images
-        if (( $(echo "$UNUSED_SPACE <= $MIN_UNUSED_SPACE" | bc -l) )); then
+        # Use < below to get get fewest images or <= to get most
+        if (( $(echo "$UNUSED_SPACE < $MIN_UNUSED_SPACE" | bc -l) )); then
             MIN_UNUSED_SPACE=$UNUSED_SPACE
             COLS=$x
             ROWS=$y
+            echo "Best grid is ${COLS}x${ROWS}"
         else
             break
         fi
     done
-    echo "Optimal grid for 16:9 aspect ratio: $COLSx$ROWS"
+    echo "Optimal grid for 16:9 aspect ratio: ${COLS}x${ROWS}"
     TOTAL=$((COLS * ROWS)) # Again
 fi
 
