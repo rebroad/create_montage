@@ -11,6 +11,14 @@ done
 [ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
 [ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
 
+# new check to be certain the file is actually a 'totally correct' video file
+VIDEO_CHECK=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$VIDEO_FILE" 2>/dev/null)
+
+if [ "$VIDEO_CHECK" != "video" ]; then
+    echo "Error: The specified file is not a video or cannot be read."
+    exit 1
+fi
+
 COLS=${GRID%x*}
 ROWS=${GRID#*x}
 TOTAL=$((COLS * ROWS))
