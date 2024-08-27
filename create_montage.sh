@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e  # Exit immediately if a command exits with a non-zero status.
-
 [ "$#" -lt 1 ] || [ "$#" -gt 4 ] && { echo "Usage: $0 <video.mp4> [NxN] [before_image.png] [after_image.png]"; exit 1; }
 
 GRID="5x2"
@@ -60,14 +58,14 @@ echo "Frame numbers: ${FRAME_NUMS[*]}"
     [ -n "$SW" ] && [ -n "$SH" ] && RESIZE=",scale=${SW}:${SH}" || echo "Error: Could not determine START_IMAGE dimensions."
 }
 
-inputs=""
+inputs=()
 echo "Extracting frames..."
 for i in "${!FRAME_NUMS[@]}"; do
     if [ "$i" -eq 0 ] && [ -n "$START" ]; then
-        inputs+="-i $(convert_path "$START") "
+        inputs+=("-i" "$(convert_path "$START")")
         echo "Using START_IMAGE as frame 0."
     elif [ "$i" -eq $((TOTAL - 1)) ] && [ -n "$END" ]; then
-        inputs+="-i $(convert_path "$END") "
+        inputs+=("-i" "$(convert_path "$END")")
         echo "Using END_IMAGE as the last frame."
     else
         FRAME_NUM=${FRAME_NUMS[$i]}
@@ -76,7 +74,7 @@ for i in "${!FRAME_NUMS[@]}"; do
         echo "Extracting frame $i (${PERCENT}% of video) and resizing."
         ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         [ ! -f "$OUT_FRAME" ] && { echo "Error: Failed to extract frame $i. See $LOG"; exit 1; }
-        inputs+="-i $(convert_path "$OUT_FRAME") "
+        inputs+=("-i" "$(convert_path "$OUT_FRAME")")
     fi
 done
 
@@ -97,9 +95,9 @@ else
 fi
 
 echo "Creating montage..." | tee -a "$LOG"
-ffmpeg -loglevel error -y $inputs -filter_complex "$FILTER" -map "[v]" "$(convert_path "$OUT")" >> "$LOG" 2>&1
+ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$OUT")" >> "$LOG" 2>&1
 
-[ $? -eq 0 ] && [ -f "$OUT" ] && echo "Final image saved as $OUT" || { echo "Error: Failed to create montage."; exit 1; }
+[ $? -eq 0 ] && [ -f "$OUT" ] && echo "Final image saved as $OUT" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
 
 rm -r "$TEMP"
 echo "Temporary files deleted. Log file: $LOG"
