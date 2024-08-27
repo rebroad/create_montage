@@ -43,12 +43,23 @@ if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "
     echo "Detected Windows environment."
 
     convert_path() {
-        # Convert Unix-style paths to Windows-style paths if needed
-        if command -v cygpath &> /dev/null; then
-            cygpath -w "$1"
+    # If running in a Windows-like environment, not using cygpath as it may not be available in other shell environments
+    if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+        # Check if the path starts with a Unix-style root (e.g., /c/)
+        if [[ "$1" =~ ^/([a-zA-Z])/ ]]; then
+            # Convert Unix-style /c/path to Windows-style C:\path
+            drive_letter=${BASH_REMATCH[1]}
+            windows_path="${drive_letter}:\\${1:3}"
+            windows_path="${windows_path//\//\\}" # Replace forward slashes with backslashes
+            echo "$windows_path"
         else
+            # Assume it's already a Windows path
             echo "$1"
         fi
+    else
+        # If not in a Windows environment, return the path unchanged
+        echo "$1"
+    fi
     }
 else
     # If not on Windows shell, no path conversion needed
