@@ -1,22 +1,27 @@
 #!/bin/bash
 
-[ "$#" -lt 1 ] || [ "$#" -gt 5 ] && { echo "Usage: $0 <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png]"; exit 1; }
+[ "$#" -lt 1 ] && { echo "Usage: $0 <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i]"; exit 1; }
 
 TEMP="/tmp/temp_frames_$$"
 LOG="/tmp/ffmpeg_log_$$.log"
 mkdir -p "$TEMP" && : > "$LOG"
+
+INTERACTIVE_MODE=false
 
 for arg; do
     case "$arg" in
         *.mp4) VID="$arg" ;;
         *:*) ASPECT_RATIO="$arg" ;;
         *x*) GRID="$arg" ;;
+        -i) INTERACTIVE_MODE=true ;;
         *) [ -z "$START" ] && START="$arg" || END="$arg" ;;
     esac
 done
+
 [ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
 [ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
 OUT="${VID%.*}_montage.png"
+DEADZONE_FILE="${VID%.*}_deadzones.txt"
 
 FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
 [[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && echo "Detected Windows-native ffmpeg."
@@ -92,7 +97,7 @@ elif [ -n "$ASPECT_RATIO" ]; then
             break
         fi
     done
-    echo "Optimal grid for aspect ratio $ASPECT_RATIO aspect ratio: ${COLS}x${ROWS}"
+    echo "Optimal grid for aspect ratio $ASPECT_RATIO: ${COLS}x${ROWS}"
 else
     echo "No grid or aspect ratio specified. Using default 3 row grid."
     ROWS=3
@@ -147,6 +152,26 @@ fi
 echo "Creating montage..." | tee -a "$LOG"
 ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$OUT")" >> "$LOG" 2>&1
 [ $? -eq 0 ] && [ -f "$OUT" ] && echo "Final image saved as $OUT" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
+
+# Interactive mode
+if [ "$INTERACTIVE_MODE" = true ]; then
+    while true; do
+        echo "1. Add deadzone  2. Show frames between points  3. Regenerate montage"
+        echo "4. Show current deadzones  5. Exit"
+        read -p "Enter your choice: " choice
+        case $choice in
+            1) read -p "Enter start and end frames: " start end
+               add_deadzone $start $end ;;
+            2) read -p "Enter start and end frames: " start end
+               show_frames_between $start $end ;;
+            3) generate_montage $TOTAL $COLS $ROWS "$OUT"
+               echo "Montage regenerated: $OUT" ;;
+            4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
+            5) break ;;
+            *) echo "Invalid choice" ;;
+        esac
+    done
+fi
 
 rm -r "$TEMP"
 echo "Temporary files deleted. Log file: $LOG"
