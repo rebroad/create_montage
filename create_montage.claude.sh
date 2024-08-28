@@ -163,21 +163,15 @@ generate_montage() {
     for ((i=0; i<TOTAL; i++)); do
         frame_nums+=($(printf "%.0f" $(echo "$start_frame + $i * $step" | bc -l)))
     done
-
     echo "DEBUG: Initial frame numbers: ${frame_nums[*]}"
-
-    # Step 2: Adjust for deadzones and optimize distribution
     optimize_frame_distribution
-
     echo "DEBUG: Final frame numbers: ${frame_nums[*]}"
-
-    # Extract frames and create montage
     local inputs=()
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
-        PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc -l)
-        echo "Extracting frame $i ($PERCENT% of selected range) and resizing."
+        PERCENT=$(echo "scale=2; (${FRAME_NUM} - $start_frame) * 100 / ${range}" | bc)
+        echo "Extracting frame $i (${PERCENT}% of selected range) and resizing."
         if [ "$INTERACTIVE_MODE" = true ]; then
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
@@ -221,16 +215,11 @@ optimize_frame_distribution() {
     local max_iterations=100
     local epsilon=0.01
     local prev_std_dev=0
-    
     echo "DEBUG: Starting frame distribution optimization"
     echo "DEBUG: Deadzones: ${deadzones[*]}"
-    
     for ((iteration=0; iteration<max_iterations; iteration++)); do
         local improved=false
-        
         echo "DEBUG: Iteration $iteration"
-        
-        # Adjust for deadzones
         for range in "${deadzones[@]}"; do
             IFS=':' read -r start end <<< "$range"
             for i in "${!frame_nums[@]}"; do
@@ -246,49 +235,36 @@ optimize_frame_distribution() {
                 fi
             done
         done
-        
-        # Calculate gaps and statistics
         local gaps=()
         for ((i=1; i<${#frame_nums[@]}; i++)); do
             gaps+=($((frame_nums[i] - frame_nums[i-1])))
         done
-        
         local sum_gaps=0
         for gap in "${gaps[@]}"; do
             sum_gaps=$((sum_gaps + gap))
         done
-        local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc -l)
-        
+        local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
         local sum_sq_diff=0
         for gap in "${gaps[@]}"; do
-            local diff=$(echo "scale=2; $gap - $avg_gap" | bc -l)
-            sum_sq_diff=$(echo "scale=2; $sum_sq_diff + ($diff * $diff)" | bc -l)
+            local diff=$(echo "scale=2; $gap - $avg_gap" | bc)
+            sum_sq_diff=$(echo "scale=2; $sum_sq_diff + ($diff * $diff)" | bc)
         done
-        
-        local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc -l)
-        
+        local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc)
         echo "DEBUG: Average gap: $avg_gap, Standard deviation: $std_dev"
-        
-        # Check for improvement
         if ((iteration > 0)); then
-            local improvement=$(echo "scale=2; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc -l)
+            local improvement=$(echo "scale=2; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
             echo "DEBUG: Improvement: $improvement"
             if (( $(echo "$improvement < $epsilon" | bc -l) )) && ! $improved; then
                 echo "DEBUG: Optimization complete. No significant improvement."
                 break
             fi
         fi
-        
         prev_std_dev=$std_dev
-        
-        # Adjust frame positions
         for ((i=1; i<${#frame_nums[@]}-1; i++)); do
             local left_gap=$((frame_nums[i] - frame_nums[i-1]))
             local right_gap=$((frame_nums[i+1] - frame_nums[i]))
             local adjustment=$(echo "scale=0; ($right_gap - $left_gap) / 4" | bc)
             local new_pos=$((frame_nums[i] + adjustment))
-            
-            # Check if new position is in a deadzone
             local in_deadzone=false
             for range in "${deadzones[@]}"; do
                 IFS=':' read -r start end <<< "$range"
@@ -297,14 +273,12 @@ optimize_frame_distribution() {
                     break
                 fi
             done
-            
             if ! $in_deadzone && ((new_pos != frame_nums[i])); then
                 echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos"
                 frame_nums[i]=$new_pos
                 improved=true
             fi
         done
-        
         if ! $improved; then
             echo "DEBUG: No improvements made in this iteration. Stopping optimization."
             break
