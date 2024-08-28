@@ -131,15 +131,6 @@ merge_deadzones() {
     rm "$temp_file"
 }
 
-add_deadzone() {
-    local start=$1
-    local end=$2
-    echo "$start:$end" >> "$DEADZONE_FILE"
-    merge_deadzones
-    echo "Added and merged deadzones. Current deadzones:"
-    cat "$DEADZONE_FILE"
-}
-
 read_deadzones() {
     deadzones=()
     if [ -f "$DEADZONE_FILE" ]; then
@@ -298,7 +289,6 @@ show_frames_between() {
 
 # Main execution
 generate_montage $TOTAL $COLS $ROWS "$OUT"
-echo "Montage generated: $OUT"
 
 # Interactive mode
 if [ "$INTERACTIVE_MODE" = true ]; then
