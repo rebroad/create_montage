@@ -66,9 +66,11 @@ FRAME_HEIGHT=$(clean_num "$FRAME_HEIGHT")
 
 if [ -n "$ASPECT_RATIO" ]; then
     IFS=':' read -r WIDTH HEIGHT <<< "$ASPECT_RATIO"
-    TARGET_RATIO=$(echo "scale=10; $WIDTH/$HEIGHT" | bc -l)
-    echo "Target aspect ratio: $ASPECT_RATIO ($TARGET_RATIO)"
+else
+    WIDTH=16; HEIGHT=9
 fi
+TARGET_RATIO=$(echo "scale=10; $WIDTH/$HEIGHT" | bc -l)
+echo "Target aspect ratio: $WIDTH:$HEIGHT ($TARGET_RATIO)"
 
 if [ -n "$GRID" ]; then
     if [[ "$GRID" =~ ^x[0-9]+$ ]]; then
@@ -106,9 +108,9 @@ elif [ -n "$ASPECT_RATIO" ]; then
     done
     echo "Optimal grid for aspect ratio $ASPECT_RATIO aspect ratio: ${COLS}x${ROWS}"
 else
-    echo "No grid or aspect ratio specified. Using default 5x2 grid."
-    COLS=5
-    ROWS=2
+    echo "No grid or aspect ratio specified. Using default 3 row grid."
+    ROWS=3
+    COLS=$(echo "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH" | bc)
 fi
 
 echo DEBUG COLS=${COLS} ROWS=${ROWS}
