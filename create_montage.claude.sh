@@ -213,13 +213,15 @@ generate_montage() {
 optimize_frame_distribution() {
     read_deadzones
     local max_iterations=100
-    local epsilon=0.01
+    local epsilon=0.001
     local prev_std_dev=0
     echo "DEBUG: Starting frame distribution optimization"
     echo "DEBUG: Deadzones: ${deadzones[*]}"
     for ((iteration=0; iteration<max_iterations; iteration++)); do
         local improved=false
         echo "DEBUG: Iteration $iteration"
+        
+        # First, move frames out of deadzones
         for range in "${deadzones[@]}"; do
             IFS=':' read -r start end <<< "$range"
             for i in "${!frame_nums[@]}"; do
@@ -235,15 +237,49 @@ optimize_frame_distribution() {
                 fi
             done
         done
+        
+        # Calculate current gaps and statistics
         local gaps=()
         for ((i=1; i<${#frame_nums[@]}; i++)); do
             gaps+=($((frame_nums[i] - frame_nums[i-1])))
         done
-        local sum_gaps=0
-        for gap in "${gaps[@]}"; do
-            sum_gaps=$((sum_gaps + gap))
-        done
+        local sum_gaps=$(IFS=+; echo "$((${gaps[*]}))")
         local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
+        
+        # Optimize frame positions
+        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
+            local left_gap=$((frame_nums[i] - frame_nums[i-1]))
+            local right_gap=$((frame_nums[i+1] - frame_nums[i]))
+            local target_gap=$(echo "scale=0; ($left_gap + $right_gap) / 2" | bc)
+            
+            if ((left_gap != target_gap || right_gap != target_gap)); then
+                local new_pos=$((frame_nums[i-1] + target_gap))
+                
+                # Check if new position is in a deadzone
+                local in_deadzone=false
+                for range in "${deadzones[@]}"; do
+                    IFS=':' read -r start end <<< "$range"
+                    if ((new_pos >= start && new_pos <= end)); then
+                        in_deadzone=true
+                        break
+                    fi
+                done
+                
+                if ! $in_deadzone && ((new_pos != frame_nums[i])); then
+                    echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos"
+                    frame_nums[i]=$new_pos
+                    improved=true
+                fi
+            fi
+        done
+        
+        # Recalculate gaps and compute standard deviation
+        gaps=()
+        for ((i=1; i<${#frame_nums[@]}; i++)); do
+            gaps+=($((frame_nums[i] - frame_nums[i-1])))
+        done
+        sum_gaps=$(IFS=+; echo "$((${gaps[*]}))")
+        avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
         local sum_sq_diff=0
         for gap in "${gaps[@]}"; do
             local diff=$(echo "scale=2; $gap - $avg_gap" | bc)
@@ -251,8 +287,9 @@ optimize_frame_distribution() {
         done
         local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc)
         echo "DEBUG: Average gap: $avg_gap, Standard deviation: $std_dev"
+        
         if ((iteration > 0)); then
-            local improvement=$(echo "scale=2; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
+            local improvement=$(echo "scale=3; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
             echo "DEBUG: Improvement: $improvement"
             if (( $(echo "$improvement < $epsilon" | bc -l) )) && ! $improved; then
                 echo "DEBUG: Optimization complete. No significant improvement."
@@ -260,25 +297,7 @@ optimize_frame_distribution() {
             fi
         fi
         prev_std_dev=$std_dev
-        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
-            local left_gap=$((frame_nums[i] - frame_nums[i-1]))
-            local right_gap=$((frame_nums[i+1] - frame_nums[i]))
-            local adjustment=$(echo "scale=0; ($right_gap - $left_gap) / 4" | bc)
-            local new_pos=$((frame_nums[i] + adjustment))
-            local in_deadzone=false
-            for range in "${deadzones[@]}"; do
-                IFS=':' read -r start end <<< "$range"
-                if ((new_pos >= start && new_pos <= end)); then
-                    in_deadzone=true
-                    break
-                fi
-            done
-            if ! $in_deadzone && ((new_pos != frame_nums[i])); then
-                echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos"
-                frame_nums[i]=$new_pos
-                improved=true
-            fi
-        done
+        
         if ! $improved; then
             echo "DEBUG: No improvements made in this iteration. Stopping optimization."
             break
