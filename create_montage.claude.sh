@@ -220,20 +220,20 @@ optimize_frame_distribution() {
     echo "DEBUG: Initial frame numbers: ${frame_nums[*]}"
 
     calculate_gaps() {
-        local -n frames=$1
-        local -n gaps=$2
-        gaps=()
-        for ((i=1; i<${#frames[@]}; i++)); do
-            gaps+=($((frames[i] - frames[i-1])))
+        local -n frames_ref=$1
+        local -n gaps=_ref$2
+        gaps_ref=()
+        for ((i=1; i<${#frames_ref[@]}; i++)); do
+            gaps_ref+=($((frames_ref[i] - frames_ref[i-1])))
         done
     }
 
     print_frames_and_gaps() {
         local iteration=$1
-        local -n frames=$2
-        local -n gaps=$3
-        local frames_str=$(IFS=,; echo "${frames[*]}")
-        local gaps_str=$(IFS=,; echo "${gaps[*]}")
+        local -n frames_ref=$2
+        local -n gaps=_ref$3
+        local frames_str=$(IFS=,; echo "${frames_ref[*]}")
+        local gaps_str=$(IFS=,; echo "${gaps_ref[*]}")
         echo "DEBUG: After iteration $iteration - Frames: [$frames_str] Gaps: [$gaps_str]"
     }
 
