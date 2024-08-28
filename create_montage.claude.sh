@@ -223,8 +223,8 @@ generate_montage() {
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
-        PERCENT=$(echo "scale=2; $FRAME_NUM * 100 / ($FRAMES - 1)" | bc -l)
-        echo "Extracting frame $i ($PERCENT% of video) and resizing."
+        PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc -l)
+        echo "Extracting frame $i ($PERCENT% of selected range) and resizing."
         if [ "$INTERACTIVE_MODE" = true ]; then
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
