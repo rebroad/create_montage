@@ -174,14 +174,14 @@ generate_montage() {
     local frames_to_select=$((total_frames - 2))
 
     # Calculate initial ideal step size
-    local ideal_step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc)
+    local ideal_step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc -l)
     
     local current_step=$ideal_step
     local last_adjusted_index=0
     local current_frame=0
 
     for ((i=1; i < total_frames - 1; i++)); do
-        current_frame=$(echo "$current_frame + $current_step" | bc)
+        current_frame=$(echo "$current_frame + $current_step" | bc -l)
         local target=$(printf "%.0f" $current_frame)
         
         if is_in_deadzone $target; then
@@ -207,11 +207,11 @@ generate_montage() {
             # Adjust previous frames if necessary
             local frames_to_adjust=$((i - last_adjusted_index))
             if [ $frames_to_adjust -gt 0 ]; then
-                local new_step=$(echo "scale=10; ($target - ${frame_nums[$last_adjusted_index]}) / $frames_to_adjust" | bc)
+                local new_step=$(echo "scale=10; ($target - ${frame_nums[$last_adjusted_index]}) / $frames_to_adjust" | bc -l)
                 local adjust_frame=${frame_nums[$last_adjusted_index]}
                 
                 for ((j=last_adjusted_index + 1; j<=i; j++)); do
-                    adjust_frame=$(echo "$adjust_frame + $new_step" | bc)
+                    adjust_frame=$(echo "$adjust_frame + $new_step" | bc -l)
                     frame_nums[$j]=$(printf "%.0f" $adjust_frame)
                 done
             fi
@@ -267,6 +267,16 @@ generate_montage() {
     echo inputs = "${inputs[@]}" | tee -a "$LOG"
     ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$output_file")" >> "$LOG" 2>&1
     [ $? -eq 0 ] && [ -f "$output_file" ] && echo "Montage saved as $output_file" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
+}
+
+add_deadzone() {
+    local start=$1
+    local end=$2
+    [ -z "$end" ] && end=$start  # If end is not provided, use start as end
+    echo "$start:$end" >> "$DEADZONE_FILE"
+    merge_deadzones
+    echo "Added and merged deadzones. Current deadzones:"
+    cat "$DEADZONE_FILE"
 }
 
 show_frames_between() {
