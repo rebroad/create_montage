@@ -155,38 +155,39 @@ redistribute_frames() {
     local start_frame=$1
     local end_frame=$2
     local range=$((end_frame - start_frame))
-    local min_gap=$(echo "scale=2; $range / (${#frame_nums[@]} * 2)" | bc)
-    echo "DEBUG: min_gap = $min_gap"
-    for ((i=1; i<${#frame_nums[@]}-1; i++)); do
-        local prev=${frame_nums[i-1]}
-        local curr=${frame_nums[i]}
-        local next=${frame_nums[i+1]}
-
-        echo "DEBUG: Checking frame $curr (prev: $prev, next: $next)"
-        if (( $(echo "$curr - $prev < $min_gap" | bc -l) )) || (( $(echo "$next - $curr < $min_gap" | bc -l) )); then
-            echo "DEBUG: Gap too small for frame $curr"
-            # Find the nearest larger gap
-            local j=$i
-            while ((j > 0)) && ((j < ${#frame_nums[@]}-1)); do
-                local gap=$((frame_nums[j+1] - frame_nums[j-1]))
-                echo "DEBUG: Checking gap between ${frame_nums[j-1]} and ${frame_nums[j+1]}: $gap"
-                if (( $(echo "$gap > 3 * $min_gap" | bc -l) )); then
-                    # Move the current frame to the middle of this larger gap
-                    local new_pos=$(echo "scale=0; (${frame_nums[j-1]} + ${frame_nums[j+1]}) / 2" | bc)
-                    # Ensure we're not creating a duplicate
-                    if ((new_pos != frame_nums[j-1] && new_pos != frame_nums[j+1])); then
-                        local old_pos=${frame_nums[i]}
-                        frame_nums[i]=$new_pos
-                        echo "DEBUG: Moved frame from $old_pos to $new_pos"
-                        break
-                    fi
+    local ideal_gap=$(echo "scale=2; $range / (${#frame_nums[@]} - 1)" | bc)
+    echo "DEBUG: ideal_gap = $ideal_gap"
+    
+    local improved=true
+    while $improved; do
+        improved=false
+        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
+            local prev=${frame_nums[i-1]}
+            local curr=${frame_nums[i]}
+            local next=${frame_nums[i+1]}
+            
+            local left_gap=$((curr - prev))
+            local right_gap=$((next - curr))
+            
+            echo "DEBUG: Checking frame $curr (prev: $prev, next: $next)"
+            
+            # Check if we can move the frame to improve spacing
+            local new_pos
+            if ((left_gap > right_gap)); then
+                new_pos=$(echo "scale=0; $prev + $ideal_gap" | bc)
+            else
+                new_pos=$(echo "scale=0; $next - $ideal_gap" | bc)
+            fi
+            
+            # Ensure new position is within bounds and not in a deadzone
+            if ((new_pos > prev && new_pos < next)) && ! is_in_deadzone $new_pos; then
+                if ((new_pos != curr)); then
+                    echo "DEBUG: Moving frame from $curr to $new_pos"
+                    frame_nums[i]=$new_pos
+                    improved=true
                 fi
-                ((j++))
-                if ((j == ${#frame_nums[@]}-1)); then
-                    j=1  # Wrap around to the beginning
-                fi
-            done
-        fi
+            fi
+        done
     done
 }
 
