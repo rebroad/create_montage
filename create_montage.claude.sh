@@ -189,18 +189,15 @@ redistribute_frames() {
 }
 
 generate_montage() {
-    local cols=$1
-    local rows=$2
-    local total_frames=$((cols * rows))
-    local output_file=$3
-    local start_frame=${4:-0}
-    local end_frame=${5:-$((FRAMES - 1))}
+    local output_file=$1
+    local start_frame=${2:-0}
+    local end_frame=${3:-$((FRAMES - 1))}
     local frame_nums=()
 
     # Step 1: Select evenly spaced frames ignoring deadzones
     local range=$((end_frame - start_frame))
-    local step=$(echo "scale=10; $range / ($total_frames - 1)" | bc -l)
-    for ((i=0; i<total_frames; i++)); do
+    local step=$(echo "scale=10; $range / ($TOTAL - 1)" | bc -l)
+    for ((i=0; i<TOTAL; i++)); do
         frame_nums+=($(printf "%.0f" $(echo "$start_frame + $i * $step" | bc -l)))
     done
 
