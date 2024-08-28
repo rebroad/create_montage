@@ -104,6 +104,7 @@ else
     COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
 fi
 
+echo DEBUG COLS=${COLS} ROWS=${ROWS}
 TOTAL=$((COLS * ROWS))
 [ "$TOTAL" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
 [ "$TOTAL" -gt "$FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL) than video frames ($FRAMES)."; exit 1; }
@@ -223,7 +224,7 @@ generate_montage() {
         frame_nums+=($target)
     done
 
-    # Sort frame numbers (they should already be in order, but just in case)
+    # Sort frame numbers
     IFS=$'\n' sorted=($(sort -n <<<"${frame_nums[*]}"))
     unset IFS
     frame_nums=("${sorted[@]}")
@@ -235,7 +236,7 @@ generate_montage() {
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
-        PERCENT=$(echo "scale=2; $FRAME_NUM * 100 / ($FRAMES - 1)" | bc)
+        PERCENT=$(echo "scale=2; $FRAME_NUM * 100 / ($FRAMES - 1)" | bc -l)
         echo "Extracting frame $i ($PERCENT% of video) and resizing."
         if [ "$INTERACTIVE_MODE" = true ]; then
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
@@ -274,7 +275,7 @@ show_frames_between() {
     local step=$(( (end - start) / 10 ))  # Show 10 frames between start and end
     [ $step -lt 1 ] && step=1
 
-    local temp_montage="$TEMP/intermediate_montage.png"
+    local temp_montage="${OUT%.*}_intermediate_${start}_${end}.png"
     local frame_nums=()
 
     for ((i=start; i<=end; i+=step)); do
