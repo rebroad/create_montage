@@ -168,6 +168,7 @@ generate_montage() {
 
     read_deadzones
 
+    # Always include first and last frames
     frame_nums=(0 $((FRAMES - 1)))
     local frames_to_select=$((total_frames - 2))
 
@@ -179,31 +180,28 @@ generate_montage() {
         echo $current
     }
 
-    local step=$(echo "scale=10; ($FRAMES - 1) / ($frames_to_select + 1)" | bc)
-    local current=0
-
-    for ((i=1; i <= frames_to_select; i++)); do
-        current=$(echo "$current + $step" | bc)
-        target=$(printf "%.0f" $current)
+    # Calculate ideal step size
+    local step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc)
+    
+    # Select frames
+    for ((i=1; i < total_frames - 1; i++)); do
+        local target=$(printf "%.0f" $(echo "$i * $step" | bc))
         
         if is_in_deadzone $target; then
-            next_valid=$(find_next_valid_frame $target)
-            remaining_frames=$((frames_to_select - i + 1))
-            remaining_video=$((FRAMES - next_valid))
-            step=$(echo "scale=10; $remaining_video / $remaining_frames" | bc)
-            target=$next_valid
+            target=$(find_next_valid_frame $target)
         fi
         
         frame_nums+=($target)
-        current=$target
     done
 
+    # Sort frame numbers (they should already be in order, but just in case)
     IFS=$'\n' sorted=($(sort -n <<<"${frame_nums[*]}"))
     unset IFS
     frame_nums=("${sorted[@]}")
 
     echo "Frame numbers: ${frame_nums[*]}"
 
+    # Extract frames and create montage
     local inputs=()
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
