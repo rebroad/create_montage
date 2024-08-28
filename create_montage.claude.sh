@@ -172,23 +172,52 @@ generate_montage() {
     frame_nums=(0 $((FRAMES - 1)))
     local frames_to_select=$((total_frames - 2))
 
-    find_next_valid_frame() {
-        local current=$1
-        while is_in_deadzone $current; do
-            current=$(echo "$current + 1" | bc)
-        done
-        echo $current
-    }
-
-    # Calculate ideal step size
-    local step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc)
+    # Calculate initial ideal step size
+    local ideal_step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc)
     
-    # Select frames
+    local current_step=$ideal_step
+    local last_adjusted_index=0
+    local current_frame=0
+
     for ((i=1; i < total_frames - 1; i++)); do
-        local target=$(printf "%.0f" $(echo "$i * $step" | bc))
+        current_frame=$(echo "$current_frame + $current_step" | bc)
+        local target=$(printf "%.0f" $current_frame)
         
         if is_in_deadzone $target; then
-            target=$(find_next_valid_frame $target)
+            # Find the closest valid frame
+            local before_deadzone=$target
+            local after_deadzone=$target
+            
+            while is_in_deadzone $before_deadzone && [ $before_deadzone -gt 0 ]; do
+                before_deadzone=$((before_deadzone - 1))
+            done
+            
+            while is_in_deadzone $after_deadzone && [ $after_deadzone -lt $FRAMES ]; do
+                after_deadzone=$((after_deadzone + 1))
+            done
+            
+            # Choose the closest valid frame
+            if [ $((target - before_deadzone)) -le $((after_deadzone - target)) ] && [ $before_deadzone -gt 0 ]; then
+                target=$before_deadzone
+            else
+                target=$after_deadzone
+            fi
+            
+            # Adjust previous frames if necessary
+            local frames_to_adjust=$((i - last_adjusted_index))
+            if [ $frames_to_adjust -gt 0 ]; then
+                local new_step=$(echo "scale=10; ($target - ${frame_nums[$last_adjusted_index]}) / $frames_to_adjust" | bc)
+                local adjust_frame=${frame_nums[$last_adjusted_index]}
+                
+                for ((j=last_adjusted_index + 1; j<=i; j++)); do
+                    adjust_frame=$(echo "$adjust_frame + $new_step" | bc)
+                    frame_nums[$j]=$(printf "%.0f" $adjust_frame)
+                done
+            fi
+            
+            last_adjusted_index=$i
+            current_frame=$target
+            current_step=$ideal_step
         fi
         
         frame_nums+=($target)
