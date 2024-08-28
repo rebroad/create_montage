@@ -1,29 +1,22 @@
 #!/bin/bash
 
-[ "$#" -lt 1 ] || [ "$#" -gt 4 ] && { echo "Usage: $0 <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png]"; exit 1; }
-
-GRID=""
-ASPECT_RATIO=""
-
-for arg; do
-    if [[ "$arg" =~ ^[0-9]+:[0-9]+$ ]]; then
-        ASPECT_RATIO="$arg"
-    elif [[ "$arg" =~ ^[0-9]+x[0-9]+$ ]] || [[ "$arg" =~ ^x[0-9]+$ ]] || [[ "$arg" =~ ^[0-9]+x$ ]]; then
-        GRID="$arg"
-    elif [[ "$arg" =~ \.mp4$ ]]; then
-        VID="$arg"
-    else
-        [ -z "$START" ] && START="$arg" || END="$arg"
-    fi
-done
-
-[ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
-[ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
+[ "$#" -lt 1 ] || [ "$#" -gt 5 ] && { echo "Usage: $0 <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png]"; exit 1; }
 
 TEMP="/tmp/temp_frames_$$"
 LOG="/tmp/ffmpeg_log_$$.log"
-OUT="${VID%.*}_montage.png"
 mkdir -p "$TEMP" && : > "$LOG"
+
+for arg; do
+    case "$arg" in
+        *.mp4) VID="$arg" ;;
+        *:*) ASPECT_RATIO="$arg" ;;
+        *x*) GRID="$arg" ;;
+        *) [ -z "$START" ] && START="$arg" || END="$arg" ;;
+    esac
+done
+[ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
+[ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
+OUT="${VID%.*}_montage.png"
 
 FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
 [[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && echo "Detected Windows-native ffmpeg."
@@ -33,16 +26,14 @@ convert_path() {
 }
 
 clean_num() {
-    [[ "$1" =~ ^[0-9]+$ ]] || { echo "Ooops: $1 was not clean" >&2; }
     echo "$1" | tr -d '[:space:]'
 }
 
-echo "Attempting to determine total frames for video: $VID" | tee -a "$LOG"
+echo "Determining video information for: $VID" | tee -a "$LOG"
 FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>> "$LOG")
-[ -z "$FRAMES" ] && { echo "Error: Failed to determine total frames. See $LOG for details."; exit 1; }
 FRAMES=$(clean_num "$FRAMES")
 echo "Total frames determined: $FRAMES" | tee -a "$LOG"
-[[ "$FRAMES" =~ ^[0-9]+$ ]] || { echo "Error: FRAMES is not a valid number: $FRAMES"; exit 1; }
+[[ "$FRAMES" =~ ^[0-9]+$ ]] || { echo "Error: FRAMES is not a valid number: $FRAMES. See $LOG for details."; exit 1; }
 
 get_dimensions() {
     echo $(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$(convert_path "$1")")
@@ -69,36 +60,31 @@ if [ -n "$ASPECT_RATIO" ]; then
 else
     WIDTH=16; HEIGHT=9
 fi
-TARGET_RATIO=$(echo "scale=10; $WIDTH/$HEIGHT" | bc -l)
+TARGET_RATIO=$(bc -l <<< "scale=10; $WIDTH/$HEIGHT")
 echo "Target aspect ratio: $WIDTH:$HEIGHT ($TARGET_RATIO)"
 
 if [ -n "$GRID" ]; then
     if [[ "$GRID" =~ ^x[0-9]+$ ]]; then
         ROWS=${GRID#x}
-        COLS=$(echo "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH" | bc)
+        COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
     elif [[ "$GRID" =~ ^[0-9]+x$ ]]; then
         COLS=${GRID%x}
-        ROWS=$(echo "scale=0; ($COLS * $FRAME_WIDTH) / ($TARGET_RATIO * $FRAME_HEIGHT)" | bc)
+        ROWS=$(bc <<< "scale=0; ($COLS * $FRAME_WIDTH) / ($TARGET_RATIO * $FRAME_HEIGHT)")
     else
         COLS=${GRID%x*}
         ROWS=${GRID#*x}
     fi
     echo "Using grid: ${COLS}x${ROWS}"
 elif [ -n "$ASPECT_RATIO" ]; then
-    MIN_UNUSED_SPACE=1000000
     echo "Searching for optimal grid for $ASPECT_RATIO aspect ratio"
+    MIN_RATIO_DIFF=1000000
     for ((y=1; y<=FRAMES; y++)); do
         x=$(( (FRAMES + y - 1) / y ))
-
-        GRID_WIDTH=$(( x * FRAME_WIDTH ))
-        GRID_HEIGHT=$(( y * FRAME_HEIGHT ))
-        GRID_RATIO=$(echo "scale=10; ${GRID_WIDTH}/${GRID_HEIGHT}" | bc -l)
+        GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
         echo "Grid ${x}x${y}, ratio: $GRID_RATIO" | tee -a "$LOG"
-
-        UNUSED_SPACE=$(echo "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2" | bc -l)
-
-        if (( $(echo "$UNUSED_SPACE < $MIN_UNUSED_SPACE" | bc -l) )); then
-            MIN_UNUSED_SPACE=$UNUSED_SPACE
+        RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
+        if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
+            MIN_RATIO_DIFF=$RATIO_DIFF
             COLS=$x
             ROWS=$y
             echo "Best grid so far: ${COLS}x${ROWS}"
@@ -110,7 +96,7 @@ elif [ -n "$ASPECT_RATIO" ]; then
 else
     echo "No grid or aspect ratio specified. Using default 3 row grid."
     ROWS=3
-    COLS=$(echo "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH" | bc)
+    COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
 fi
 
 echo DEBUG COLS=${COLS} ROWS=${ROWS}
