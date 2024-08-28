@@ -258,12 +258,12 @@ generate_montage() {
     echo "Creating montage..." | tee -a "$LOG"
     echo "Filter complex: $FILTER" | tee -a "$LOG"
     echo "inputs = ${inputs[@]}" | tee -a "$LOG"
-    
+
     # Suppress Fontconfig warnings
     export FONTCONFIG_FILE="/dev/null"
-    
+
     ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$output_file")" 2>> "$LOG"
-    
+
     [ $? -eq 0 ] && [ -f "$output_file" ] && echo "Montage saved as $output_file" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
 }
 
