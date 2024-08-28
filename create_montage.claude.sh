@@ -172,7 +172,7 @@ redistribute_frames() {
                 echo "DEBUG: Checking gap between ${frame_nums[j-1]} and ${frame_nums[j+1]}: $gap"
                 if (( $(echo "$gap > 3 * $min_gap" | bc -l) )); then
                     # Move the current frame to the middle of this larger gap
-                    local new_pos=$(( (frame_nums[j-1] + frame_nums[j+1]) / 2 ))
+                    local new_pos=$(echo "scale=0; (${frame_nums[j-1]} + ${frame_nums[j+1]}) / 2" | bc)
                     # Ensure we're not creating a duplicate
                     if ((new_pos != frame_nums[j-1] && new_pos != frame_nums[j+1])); then
                         local old_pos=${frame_nums[i]}
@@ -182,7 +182,9 @@ redistribute_frames() {
                     fi
                 fi
                 ((j++))
-                [ $j -eq ${#frame_nums[@]}-1 ] && j=1  # Wrap around to the beginning
+                if ((j == ${#frame_nums[@]}-1)); then
+                    j=1  # Wrap around to the beginning
+                fi
             done
         fi
     done
@@ -272,6 +274,8 @@ add_deadzone() {
     local end=$2
     [ -z "$end" ] && end=$start  # If end is not provided, use start as end
     echo "$start:$end" >> "$DEADZONE_FILE"
+    # Hide the file on Windows after writing
+    [[ "$OSTYPE" == "cygwin"* ]] && attrib +h "$(cygpath -w "$DEADZONE_FILE")" >/dev/null 2>&1
     merge_deadzones
     echo "Added and merged deadzones. Current deadzones:"
     cat "$DEADZONE_FILE"
