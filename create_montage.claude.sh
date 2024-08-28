@@ -152,7 +152,10 @@ is_in_deadzone() {
 }
 
 redistribute_frames() {
-    local min_gap=$((FRAMES / (${#frame_nums[@]} * 2)))  # Minimum acceptable gap
+    local start_frame=$1
+    local end_frame=$2
+    local range=$((end_frame - start_frame))
+    local min_gap=$((range / (${#frame_nums[@]} * 2)))  # Minimum acceptable gap
     for ((i=1; i<${#frame_nums[@]}-1; i++)); do
         local prev=${frame_nums[i-1]}
         local curr=${frame_nums[i]}
@@ -179,36 +182,39 @@ redistribute_frames() {
 }
 
 generate_montage() {
-    local total_frames=$1
-    local cols=$2
-    local rows=$3
-    local output_file=$4
+    local cols=$1
+    local rows=$2
+    local total_frames=$((cols * rows))
+    local output_file=$3
+    local start_frame=${4:-0}
+    local end_frame=${5:-$((FRAMES - 1))}
     local frame_nums=()
 
     # Step 1: Select evenly spaced frames ignoring deadzones
-    local step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc -l)
+    local range=$((end_frame - start_frame))
+    local step=$(echo "scale=10; $range / ($total_frames - 1)" | bc -l)
     for ((i=0; i<total_frames; i++)); do
-        frame_nums+=($(printf "%.0f" $(echo "$i * $step" | bc -l)))
+        frame_nums+=($(printf "%.0f" $(echo "$start_frame + $i * $step" | bc -l)))
     done
 
     # Step 2: Adjust for deadzones
     read_deadzones
-    for range in "${deadzones[@]}"; do
-        IFS=':' read -r start end <<< "$range"
+    for dz_range in "${deadzones[@]}"; do
+        IFS=':' read -r dz_start dz_end <<< "$dz_range"
         for i in "${!frame_nums[@]}"; do
-            if ((frame_nums[i] >= start && frame_nums[i] <= end)); then
+            if ((frame_nums[i] >= dz_start && frame_nums[i] <= dz_end)); then
                 # Move frame out of deadzone
-                if ((i == 0 || frame_nums[i] - start < end - frame_nums[i])); then
-                    frame_nums[i]=$((start - 1))
+                if ((i == 0 || frame_nums[i] - dz_start < dz_end - frame_nums[i])); then
+                    frame_nums[i]=$((dz_start - 1))
                 else
-                    frame_nums[i]=$((end + 1))
+                    frame_nums[i]=$((dz_end + 1))
                 fi
             fi
         done
     done
 
     # Step 3: Redistribute frames if too tightly packed
-    redistribute_frames
+    redistribute_frames $start_frame $end_frame
 
     echo "Frame numbers: ${frame_nums[*]}"
 
@@ -263,22 +269,13 @@ add_deadzone() {
 show_frames_between() {
     local start=$1
     local end=$2
-    local step=$(( (end - start) / 10 ))  # Show 10 frames between start and end
-    [ $step -lt 1 ] && step=1
-
     local temp_montage="${OUT%.*}_intermediate_${start}_${end}.png"
-    local frame_nums=()
-
-    for ((i=start; i<=end; i+=step)); do
-        frame_nums+=($i)
-    done
-
-    generate_montage ${#frame_nums[@]} 5 2 "$temp_montage"
+    generate_montage 5 2 "$temp_montage" $start $emd
     echo "Intermediate frames montage saved as $temp_montage"
 }
 
 # Main execution
-generate_montage $TOTAL $COLS $ROWS "$OUT"
+generate_montage $COLS $ROWS "$OUT"
 
 # Interactive mode
 if [ "$INTERACTIVE_MODE" = true ]; then
@@ -291,7 +288,7 @@ if [ "$INTERACTIVE_MODE" = true ]; then
                add_deadzone $start $end ;;
             2) read -p "Enter start and end frames: " start end
                show_frames_between $start $end ;;
-            3) generate_montage $TOTAL $COLS $ROWS "$OUT"
+            3) generate_montage $COLS $ROWS "$OUT"
                echo "Montage regenerated: $OUT" ;;
             4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
             5) break ;;
