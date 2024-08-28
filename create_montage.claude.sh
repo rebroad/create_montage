@@ -156,6 +156,7 @@ redistribute_frames() {
     local end_frame=$2
     local range=$((end_frame - start_frame))
     local min_gap=$((range / (${#frame_nums[@]} * 2)))  # Minimum acceptable gap
+    echo min_gap = "$min_gap"
     for ((i=1; i<${#frame_nums[@]}-1; i++)); do
         local prev=${frame_nums[i-1]}
         local curr=${frame_nums[i]}
@@ -170,7 +171,9 @@ redistribute_frames() {
                     local new_pos=$(((frame_nums[j-1] + frame_nums[j+1]) / 2))
                     # Ensure we're not creating a duplicate
                     if ((new_pos != frame_nums[j-1] && new_pos != frame_nums[j+1])); then
+                        old_pos=frame_nums[i]
                         frame_nums[i]=$new_pos
+                        echo "Image $i is now frame $old_pos (was $new_pos)"
                         break
                     fi
                 fi
