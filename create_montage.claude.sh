@@ -245,6 +245,7 @@ optimize_frame_distribution() {
         local improved=false
         echo "DEBUG: Iteration $iteration"
 
+        local old_frame_nums=("${frame_nums[@]}")
         for range in "${deadzones[@]}"; do
             IFS=':' read -r start end <<< "$range"
             for i in "${!frame_nums[@]}"; do
@@ -283,7 +284,7 @@ optimize_frame_distribution() {
                 done
 
                 if ! $in_deadzone && ((new_pos != frame_nums[i])); then
-                    echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos (left gap: $left_gap, right gap: $right_gap, target gap: $target_gap)"
+                    echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos (old selection: ${old_frame_nums[i]}, left gap: $left_gap, right gap: $right_gap, target gap: $target_gap)"
                     frame_nums[i]=$new_pos
                     improved=true
                 fi
