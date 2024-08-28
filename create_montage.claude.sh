@@ -164,10 +164,12 @@ generate_montage() {
         frame_nums+=($(printf "%.0f" $(echo "$start_frame + $i * $step" | bc -l)))
     done
 
+    echo "DEBUG: Initial frame numbers: ${frame_nums[*]}"
+
     # Step 2: Adjust for deadzones and optimize distribution
     optimize_frame_distribution
 
-    echo "Frame numbers: ${frame_nums[*]}"
+    echo "DEBUG: Final frame numbers: ${frame_nums[*]}"
 
     # Extract frames and create montage
     local inputs=()
@@ -220,19 +222,26 @@ optimize_frame_distribution() {
     local epsilon=0.01
     local prev_std_dev=0
     
+    echo "DEBUG: Starting frame distribution optimization"
+    echo "DEBUG: Deadzones: ${deadzones[*]}"
+    
     for ((iteration=0; iteration<max_iterations; iteration++)); do
         local improved=false
+        
+        echo "DEBUG: Iteration $iteration"
         
         # Adjust for deadzones
         for range in "${deadzones[@]}"; do
             IFS=':' read -r start end <<< "$range"
             for i in "${!frame_nums[@]}"; do
                 if ((frame_nums[i] >= start && frame_nums[i] <= end)); then
+                    local old_pos=${frame_nums[i]}
                     if ((i == 0 || frame_nums[i] - start < end - frame_nums[i])); then
                         frame_nums[i]=$((start - 1))
                     else
                         frame_nums[i]=$((end + 1))
                     fi
+                    echo "DEBUG: Moved frame $i from $old_pos to ${frame_nums[i]} (deadzone: $start-$end)"
                     improved=true
                 fi
             done
@@ -244,8 +253,11 @@ optimize_frame_distribution() {
             gaps+=($((frame_nums[i] - frame_nums[i-1])))
         done
         
-        local avg_gap=$(echo "${gaps[@]}" | tr ' ' '+' | bc -l)
-        avg_gap=$(echo "scale=2; $avg_gap / ${#gaps[@]}" | bc -l)
+        local sum_gaps=0
+        for gap in "${gaps[@]}"; do
+            sum_gaps=$((sum_gaps + gap))
+        done
+        local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc -l)
         
         local sum_sq_diff=0
         for gap in "${gaps[@]}"; do
@@ -255,10 +267,14 @@ optimize_frame_distribution() {
         
         local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc -l)
         
+        echo "DEBUG: Average gap: $avg_gap, Standard deviation: $std_dev"
+        
         # Check for improvement
         if ((iteration > 0)); then
             local improvement=$(echo "scale=2; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc -l)
+            echo "DEBUG: Improvement: $improvement"
             if (( $(echo "$improvement < $epsilon" | bc -l) )) && ! $improved; then
+                echo "DEBUG: Optimization complete. No significant improvement."
                 break
             fi
         fi
@@ -282,11 +298,17 @@ optimize_frame_distribution() {
                 fi
             done
             
-            if ! $in_deadzone; then
+            if ! $in_deadzone && ((new_pos != frame_nums[i])); then
+                echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos"
                 frame_nums[i]=$new_pos
                 improved=true
             fi
         done
+        
+        if ! $improved; then
+            echo "DEBUG: No improvements made in this iteration. Stopping optimization."
+            break
+        fi
     done
 }
 
