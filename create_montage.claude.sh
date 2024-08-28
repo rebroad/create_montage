@@ -217,6 +217,7 @@ optimize_frame_distribution() {
     local prev_std_dev=0
     echo "DEBUG: Starting frame distribution optimization"
     echo "DEBUG: Deadzones: ${deadzones[*]}"
+    echo "DEBUG: Initial frame numbers: ${frame_nums[*]}"
     for ((iteration=0; iteration<max_iterations; iteration++)); do
         local improved=false
         echo "DEBUG: Iteration $iteration"
@@ -245,6 +246,8 @@ optimize_frame_distribution() {
         done
         local sum_gaps=$(IFS=+; echo "$((${gaps[*]}))")
         local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
+        echo "DEBUG: Current gaps: ${gaps[*]}"
+        echo "DEBUG: Average gap: $avg_gap"
         
         # Optimize frame positions
         for ((i=1; i<${#frame_nums[@]}-1; i++)); do
@@ -266,7 +269,7 @@ optimize_frame_distribution() {
                 done
                 
                 if ! $in_deadzone && ((new_pos != frame_nums[i])); then
-                    echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos"
+                    echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos (left gap: $left_gap, right gap: $right_gap, target gap: $target_gap)"
                     frame_nums[i]=$new_pos
                     improved=true
                 fi
@@ -286,7 +289,8 @@ optimize_frame_distribution() {
             sum_sq_diff=$(echo "scale=2; $sum_sq_diff + ($diff * $diff)" | bc)
         done
         local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc)
-        echo "DEBUG: Average gap: $avg_gap, Standard deviation: $std_dev"
+        echo "DEBUG: After adjustments - Gaps: ${gaps[*]}"
+        echo "DEBUG: After adjustments - Average gap: $avg_gap, Standard deviation: $std_dev"
         
         if ((iteration > 0)); then
             local improvement=$(echo "scale=3; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
@@ -302,7 +306,10 @@ optimize_frame_distribution() {
             echo "DEBUG: No improvements made in this iteration. Stopping optimization."
             break
         fi
+        
+        echo "DEBUG: Frame numbers after iteration $iteration: ${frame_nums[*]}"
     done
+    echo "DEBUG: Final frame numbers: ${frame_nums[*]}"
 }
 
 add_deadzone() {
