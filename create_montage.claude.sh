@@ -151,46 +151,6 @@ is_in_deadzone() {
     return 1  # Frame is not in a deadzone
 }
 
-redistribute_frames() {
-    local start_frame=$1
-    local end_frame=$2
-    local range=$((end_frame - start_frame))
-    local ideal_gap=$(echo "scale=2; $range / (${#frame_nums[@]} - 1)" | bc)
-    echo "DEBUG: ideal_gap = $ideal_gap"
-    
-    local improved=true
-    while $improved; do
-        improved=false
-        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
-            local prev=${frame_nums[i-1]}
-            local curr=${frame_nums[i]}
-            local next=${frame_nums[i+1]}
-            
-            local left_gap=$((curr - prev))
-            local right_gap=$((next - curr))
-            
-            echo "DEBUG: Checking frame $curr (prev: $prev, next: $next)"
-            
-            # Check if we can move the frame to improve spacing
-            local new_pos
-            if ((left_gap > right_gap)); then
-                new_pos=$(echo "scale=0; $prev + $ideal_gap" | bc)
-            else
-                new_pos=$(echo "scale=0; $next - $ideal_gap" | bc)
-            fi
-            
-            # Ensure new position is within bounds and not in a deadzone
-            if ((new_pos > prev && new_pos < next)) && ! is_in_deadzone $new_pos; then
-                if ((new_pos != curr)); then
-                    echo "DEBUG: Moving frame from $curr to $new_pos"
-                    frame_nums[i]=$new_pos
-                    improved=true
-                fi
-            fi
-        done
-    done
-}
-
 generate_montage() {
     local output_file=$1
     local start_frame=${2:-0}
@@ -204,24 +164,8 @@ generate_montage() {
         frame_nums+=($(printf "%.0f" $(echo "$start_frame + $i * $step" | bc -l)))
     done
 
-    # Step 2: Adjust for deadzones
-    read_deadzones
-    for dz_range in "${deadzones[@]}"; do
-        IFS=':' read -r dz_start dz_end <<< "$dz_range"
-        for i in "${!frame_nums[@]}"; do
-            if ((frame_nums[i] >= dz_start && frame_nums[i] <= dz_end)); then
-                # Move frame out of deadzone
-                if ((i == 0 || frame_nums[i] - dz_start < dz_end - frame_nums[i])); then
-                    frame_nums[i]=$((dz_start - 1))
-                else
-                    frame_nums[i]=$((dz_end + 1))
-                fi
-            fi
-        done
-    done
-
-    # Step 3: Redistribute frames if too tightly packed
-    redistribute_frames $start_frame $end_frame
+    # Step 2: Adjust for deadzones and optimize distribution
+    optimize_frame_distribution
 
     echo "Frame numbers: ${frame_nums[*]}"
 
@@ -268,6 +212,82 @@ generate_montage() {
     ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$output_file")" 2>> "$LOG"
 
     [ $? -eq 0 ] && [ -f "$output_file" ] && echo "Montage saved as $output_file" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
+}
+
+optimize_frame_distribution() {
+    read_deadzones
+    local max_iterations=100
+    local epsilon=0.01
+    local prev_std_dev=0
+    
+    for ((iteration=0; iteration<max_iterations; iteration++)); do
+        local improved=false
+        
+        # Adjust for deadzones
+        for range in "${deadzones[@]}"; do
+            IFS=':' read -r start end <<< "$range"
+            for i in "${!frame_nums[@]}"; do
+                if ((frame_nums[i] >= start && frame_nums[i] <= end)); then
+                    if ((i == 0 || frame_nums[i] - start < end - frame_nums[i])); then
+                        frame_nums[i]=$((start - 1))
+                    else
+                        frame_nums[i]=$((end + 1))
+                    fi
+                    improved=true
+                fi
+            done
+        done
+        
+        # Calculate gaps and statistics
+        local gaps=()
+        for ((i=1; i<${#frame_nums[@]}; i++)); do
+            gaps+=($((frame_nums[i] - frame_nums[i-1])))
+        done
+        
+        local avg_gap=$(echo "${gaps[@]}" | tr ' ' '+' | bc -l)
+        avg_gap=$(echo "scale=2; $avg_gap / ${#gaps[@]}" | bc -l)
+        
+        local sum_sq_diff=0
+        for gap in "${gaps[@]}"; do
+            local diff=$(echo "scale=2; $gap - $avg_gap" | bc -l)
+            sum_sq_diff=$(echo "scale=2; $sum_sq_diff + ($diff * $diff)" | bc -l)
+        done
+        
+        local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc -l)
+        
+        # Check for improvement
+        if ((iteration > 0)); then
+            local improvement=$(echo "scale=2; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc -l)
+            if (( $(echo "$improvement < $epsilon" | bc -l) )) && ! $improved; then
+                break
+            fi
+        fi
+        
+        prev_std_dev=$std_dev
+        
+        # Adjust frame positions
+        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
+            local left_gap=$((frame_nums[i] - frame_nums[i-1]))
+            local right_gap=$((frame_nums[i+1] - frame_nums[i]))
+            local adjustment=$(echo "scale=0; ($right_gap - $left_gap) / 4" | bc)
+            local new_pos=$((frame_nums[i] + adjustment))
+            
+            # Check if new position is in a deadzone
+            local in_deadzone=false
+            for range in "${deadzones[@]}"; do
+                IFS=':' read -r start end <<< "$range"
+                if ((new_pos >= start && new_pos <= end)); then
+                    in_deadzone=true
+                    break
+                fi
+            done
+            
+            if ! $in_deadzone; then
+                frame_nums[i]=$new_pos
+                improved=true
+            fi
+        done
+    done
 }
 
 add_deadzone() {
