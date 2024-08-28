@@ -151,6 +151,33 @@ is_in_deadzone() {
     return 1  # Frame is not in a deadzone
 }
 
+redistribute_frames() {
+    local min_gap=$((FRAMES / (${#frame_nums[@]} * 2)))  # Minimum acceptable gap
+    for ((i=1; i<${#frame_nums[@]}-1; i++)); do
+        local prev=${frame_nums[i-1]}
+        local curr=${frame_nums[i]}
+        local next=${frame_nums[i+1]}
+
+        if ((curr - prev < min_gap)) && ((next - curr < min_gap)); then
+            # Find the nearest larger gap
+            local j=$i
+            while ((j > 0)) && ((j < ${#frame_nums[@]}-1)); do
+                if ((frame_nums[j+1] - frame_nums[j-1] > 3 * min_gap)); then
+                    # Move the current frame to the middle of this larger gap
+                    local new_pos=$(((frame_nums[j-1] + frame_nums[j+1]) / 2))
+                    # Ensure we're not creating a duplicate
+                    if ((new_pos != frame_nums[j-1] && new_pos != frame_nums[j+1])); then
+                        frame_nums[i]=$new_pos
+                        break
+                    fi
+                fi
+                ((j++))
+                [ $j -eq ${#frame_nums[@]}-1 ] && j=1  # Wrap around to the beginning
+            done
+        fi
+    done
+}
+
 generate_montage() {
     local total_frames=$1
     local cols=$2
@@ -158,67 +185,30 @@ generate_montage() {
     local output_file=$4
     local frame_nums=()
 
-    read_deadzones
-
-    # Always include first and last frames
-    frame_nums=(0 $((FRAMES - 1)))
-    local frames_to_select=$((total_frames - 2))
-
-    # Calculate initial ideal step size
-    local ideal_step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc -l)
-    
-    local current_step=$ideal_step
-    local last_adjusted_index=0
-    local current_frame=0
-
-    for ((i=1; i < total_frames - 1; i++)); do
-        current_frame=$(echo "$current_frame + $current_step" | bc -l)
-        local target=$(printf "%.0f" $current_frame)
-        
-        if is_in_deadzone $target; then
-            # Find the closest valid frame
-            local before_deadzone=$target
-            local after_deadzone=$target
-            
-            while is_in_deadzone $before_deadzone && [ $before_deadzone -gt 0 ]; do
-                before_deadzone=$((before_deadzone - 1))
-            done
-            
-            while is_in_deadzone $after_deadzone && [ $after_deadzone -lt $FRAMES ]; do
-                after_deadzone=$((after_deadzone + 1))
-            done
-            
-            # Choose the closest valid frame
-            if [ $((target - before_deadzone)) -le $((after_deadzone - target)) ] && [ $before_deadzone -gt 0 ]; then
-                target=$before_deadzone
-            else
-                target=$after_deadzone
-            fi
-            
-            # Adjust previous frames if necessary
-            local frames_to_adjust=$((i - last_adjusted_index))
-            if [ $frames_to_adjust -gt 0 ]; then
-                local new_step=$(echo "scale=10; ($target - ${frame_nums[$last_adjusted_index]}) / $frames_to_adjust" | bc -l)
-                local adjust_frame=${frame_nums[$last_adjusted_index]}
-                
-                for ((j=last_adjusted_index + 1; j<=i; j++)); do
-                    adjust_frame=$(echo "$adjust_frame + $new_step" | bc -l)
-                    frame_nums[$j]=$(printf "%.0f" $adjust_frame)
-                done
-            fi
-            
-            last_adjusted_index=$i
-            current_frame=$target
-            current_step=$ideal_step
-        fi
-        
-        frame_nums+=($target)
+    # Step 1: Select evenly spaced frames ignoring deadzones
+    local step=$(echo "scale=10; ($FRAMES - 1) / ($total_frames - 1)" | bc -l)
+    for ((i=0; i<total_frames; i++)); do
+        frame_nums+=($(printf "%.0f" $(echo "$i * $step" | bc -l)))
     done
 
-    # Sort frame numbers
-    IFS=$'\n' sorted=($(sort -n <<<"${frame_nums[*]}"))
-    unset IFS
-    frame_nums=("${sorted[@]}")
+    # Step 2: Adjust for deadzones
+    read_deadzones
+    for range in "${deadzones[@]}"; do
+        IFS=':' read -r start end <<< "$range"
+        for i in "${!frame_nums[@]}"; do
+            if ((frame_nums[i] >= start && frame_nums[i] <= end)); then
+                # Move frame out of deadzone
+                if ((i == 0 || frame_nums[i] - start < end - frame_nums[i])); then
+                    frame_nums[i]=$((start - 1))
+                else
+                    frame_nums[i]=$((end + 1))
+                fi
+            fi
+        done
+    done
+
+    # Step 3: Redistribute frames if too tightly packed
+    redistribute_frames
 
     echo "Frame numbers: ${frame_nums[*]}"
 
