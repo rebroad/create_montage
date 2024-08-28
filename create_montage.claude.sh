@@ -155,7 +155,7 @@ redistribute_frames() {
     local start_frame=$1
     local end_frame=$2
     local range=$((end_frame - start_frame))
-    local min_gap=$((range / (${#frame_nums[@]} * 2)))  # Minimum acceptable gap
+    local min_gap=$(echo "scale=2; $range / (${#frame_nums[@]} * 2)" | bc)
     echo "DEBUG: min_gap = $min_gap"
     for ((i=1; i<${#frame_nums[@]}-1; i++)); do
         local prev=${frame_nums[i-1]}
@@ -163,16 +163,16 @@ redistribute_frames() {
         local next=${frame_nums[i+1]}
 
         echo "DEBUG: Checking frame $curr (prev: $prev, next: $next)"
-        if ((curr - prev < min_gap)) || ((next - curr < min_gap)); then
+        if (( $(echo "$curr - $prev < $min_gap" | bc -l) )) || (( $(echo "$next - $curr < $min_gap" | bc -l) )); then
             echo "DEBUG: Gap too small for frame $curr"
             # Find the nearest larger gap
             local j=$i
             while ((j > 0)) && ((j < ${#frame_nums[@]}-1)); do
                 local gap=$((frame_nums[j+1] - frame_nums[j-1]))
                 echo "DEBUG: Checking gap between ${frame_nums[j-1]} and ${frame_nums[j+1]}: $gap"
-                if ((gap > 3 * min_gap)); then
+                if (( $(echo "$gap > 3 * $min_gap" | bc -l) )); then
                     # Move the current frame to the middle of this larger gap
-                    local new_pos=$(((frame_nums[j-1] + frame_nums[j+1]) / 2))
+                    local new_pos=$(( (frame_nums[j-1] + frame_nums[j+1]) / 2 ))
                     # Ensure we're not creating a duplicate
                     if ((new_pos != frame_nums[j-1] && new_pos != frame_nums[j+1])); then
                         local old_pos=${frame_nums[i]}
@@ -238,25 +238,32 @@ generate_montage() {
         inputs+=("-i" "$(convert_path "$OUT_FRAME")")
     done
 
+    # Create montage
     FILTER=""
-    if [ "$rows" -eq 1 ]; then
-        FILTER=$(printf "[%d:v]" $(seq 0 $((cols-1))))
-        FILTER+="hstack=inputs=$cols[v]"
-    elif [ "$cols" -eq 1 ]; then
-        FILTER=$(printf "[%d:v]" $(seq 0 $((rows-1))))
-        FILTER+="vstack=inputs=$rows[v]"
+    if [ "$ROWS" -eq 1 ]; then
+        FILTER=$(printf "[%d:v]" $(seq 0 $((TOTAL-1))))
+        FILTER+="hstack=inputs=$TOTAL[v]"
+    elif [ "$COLS" -eq 1 ]; then
+        FILTER=$(printf "[%d:v]" $(seq 0 $((TOTAL-1))))
+        FILTER+="vstack=inputs=$TOTAL[v]"
     else
-        for ((r=0; r<rows; r++)); do
-            FILTER+=$(printf "[%d:v]" $(seq $((r*cols)) $((r*cols+cols-1))))
-            FILTER+="hstack=inputs=$cols[row$r]; "
+        for ((r=0; r<ROWS; r++)); do
+            FILTER+=$(printf "[%d:v]" $(seq $((r*COLS)) $((r*COLS+COLS-1))))
+            FILTER+="hstack=inputs=$COLS[row$r];"
         done
-        FILTER+=$(printf "[row%d]" $(seq 0 $((rows-1))))
-        FILTER+="vstack=inputs=$rows[v]"
+        FILTER+=$(printf "[row%d]" $(seq 0 $((ROWS-1))))
+        FILTER+="vstack=inputs=$ROWS[v]"
     fi
 
     echo "Creating montage..." | tee -a "$LOG"
-    echo inputs = "${inputs[@]}" | tee -a "$LOG"
-    ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$output_file")" >> "$LOG" 2>&1
+    echo "Filter complex: $FILTER" | tee -a "$LOG"
+    echo "inputs = ${inputs[@]}" | tee -a "$LOG"
+    
+    # Suppress Fontconfig warnings
+    export FONTCONFIG_FILE="/dev/null"
+    
+    ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$output_file")" 2>> "$LOG"
+    
     [ $? -eq 0 ] && [ -f "$output_file" ] && echo "Montage saved as $output_file" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
 }
 
