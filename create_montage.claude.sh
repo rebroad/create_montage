@@ -156,24 +156,28 @@ redistribute_frames() {
     local end_frame=$2
     local range=$((end_frame - start_frame))
     local min_gap=$((range / (${#frame_nums[@]} * 2)))  # Minimum acceptable gap
-    echo min_gap = "$min_gap"
+    echo "DEBUG: min_gap = $min_gap"
     for ((i=1; i<${#frame_nums[@]}-1; i++)); do
         local prev=${frame_nums[i-1]}
         local curr=${frame_nums[i]}
         local next=${frame_nums[i+1]}
 
-        if ((curr - prev < min_gap)) && ((next - curr < min_gap)); then
+        echo "DEBUG: Checking frame $curr (prev: $prev, next: $next)"
+        if ((curr - prev < min_gap)) || ((next - curr < min_gap)); then
+            echo "DEBUG: Gap too small for frame $curr"
             # Find the nearest larger gap
             local j=$i
             while ((j > 0)) && ((j < ${#frame_nums[@]}-1)); do
-                if ((frame_nums[j+1] - frame_nums[j-1] > 3 * min_gap)); then
+                local gap=$((frame_nums[j+1] - frame_nums[j-1]))
+                echo "DEBUG: Checking gap between ${frame_nums[j-1]} and ${frame_nums[j+1]}: $gap"
+                if ((gap > 3 * min_gap)); then
                     # Move the current frame to the middle of this larger gap
                     local new_pos=$(((frame_nums[j-1] + frame_nums[j+1]) / 2))
                     # Ensure we're not creating a duplicate
                     if ((new_pos != frame_nums[j-1] && new_pos != frame_nums[j+1])); then
-                        old_pos=frame_nums[i]
+                        local old_pos=${frame_nums[i]}
                         frame_nums[i]=$new_pos
-                        echo "Image $i is now frame $old_pos (was $new_pos)"
+                        echo "DEBUG: Moved frame from $old_pos to $new_pos"
                         break
                     fi
                 fi
@@ -272,18 +276,20 @@ add_deadzone() {
 show_frames_between() {
     local start=$1
     local end=$2
-    local temp_montage="${OUT%.*}_intermediate_${start}_${end}.png"
-    generate_montage 5 2 "$temp_montage" $start $emd
+    local temp_montage="${OUT%.*}_intermediate.png"
+    generate_montage "$temp_montage" $start $end
     echo "Intermediate frames montage saved as $temp_montage"
 }
 
 # Main execution
-generate_montage $COLS $ROWS "$OUT"
+if [ "$INTERACTIVE_MODE" = false ]; then
+    generate_montage "$OUT"
+fi
 
 # Interactive mode
 if [ "$INTERACTIVE_MODE" = true ]; then
     while true; do
-        echo "1. Add deadzone  2. Show frames between points  3. Regenerate montage"
+        echo "1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage"
         echo "4. Show current deadzones  5. Exit"
         read -p "Enter your choice: " choice
         case $choice in
@@ -291,8 +297,7 @@ if [ "$INTERACTIVE_MODE" = true ]; then
                add_deadzone $start $end ;;
             2) read -p "Enter start and end frames: " start end
                show_frames_between $start $end ;;
-            3) generate_montage $COLS $ROWS "$OUT"
-               echo "Montage regenerated: $OUT" ;;
+            3) generate_montage "$OUT" ;;
             4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
             5) break ;;
             *) echo "Invalid choice" ;;
