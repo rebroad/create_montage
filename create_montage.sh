@@ -145,7 +145,6 @@ else
 fi
 
 echo "Creating montage..." | tee -a "$LOG"
-echo inputs = "${inputs[@]}" | tee -a "$LOG"
 ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$OUT")" >> "$LOG" 2>&1
 [ $? -eq 0 ] && [ -f "$OUT" ] && echo "Final image saved as $OUT" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
 
