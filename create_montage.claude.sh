@@ -142,6 +142,7 @@ read_deadzones() {
 
 is_in_deadzone() {
     local frame=$1
+    local range
     for range in "${deadzones[@]}"; do
         IFS=':' read -r start end <<< "$range"
         if (( $(echo "$frame >= $start && $frame <= $end" | bc -l) )); then
@@ -167,11 +168,15 @@ generate_montage() {
     optimize_frame_distribution
     echo "DEBUG: Final frame numbers: ${frame_nums[*]}"
     local inputs=()
+    what="video"
+    [ -n "$2" ] && { what="selected range"; }
+    [ -n "$3" ] && { what="selected range"; }
+    [ -n $RESIZE ] && { resizing=" and resizing."; }
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
-        PERCENT=$(echo "scale=2; (${FRAME_NUM} - $start_frame) * 100 / ${range}" | bc)
-        echo "Extracting frame $i (${PERCENT}% of selected range) and resizing."
+        PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
+        echo "Extracting frame $i ($PERCENT% of $what)$resizing"
         if [ "$INTERACTIVE_MODE" = true ]; then
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
@@ -215,6 +220,7 @@ optimize_frame_distribution() {
     local max_iterations=100
     local epsilon=0.001
     local prev_std_dev=0
+    local range
     echo "DEBUG: Starting frame distribution optimization"
     echo "DEBUG: Deadzones: ${deadzones[*]}"
     for ((iteration=0; iteration<max_iterations; iteration++)); do
