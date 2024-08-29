@@ -217,35 +217,22 @@ optimize_frame_distribution() {
     local prev_std_dev=0
     echo "DEBUG: Starting frame distribution optimization"
     echo "DEBUG: Deadzones: ${deadzones[*]}"
-    echo "DEBUG: Initial frame numbers: ${frame_nums[*]}"
-
-    calculate_gaps() {
-        local -n frames_ref=$1
-        local -n gaps=_ref$2
-        gaps_ref=()
-        for ((i=1; i<${#frames_ref[@]}; i++)); do
-            gaps_ref+=($((frames_ref[i] - frames_ref[i-1])))
-        done
-    }
-
-    print_frames_and_gaps() {
-        local iteration=$1
-        local -n frames_ref=$2
-        local -n gaps=_ref$3
-        local frames_str=$(IFS=,; echo "${frames_ref[*]}")
-        local gaps_str=$(IFS=,; echo "${gaps_ref[*]}")
-        echo "DEBUG: After iteration $iteration - Frames: [$frames_str] Gaps: [$gaps_str]"
-    }
-
-    local gaps=()
-    calculate_gaps frame_nums gaps
-    print_frames_and_gaps "initial" frame_nums gaps
-
     for ((iteration=0; iteration<max_iterations; iteration++)); do
         local improved=false
         echo "DEBUG: Iteration $iteration"
 
-        local old_frame_nums=("${frame_nums[@]}")
+        # First, move frames out of deadzones.
+        # Technique to implement - iterate through each deadzone. For each deadzone, find the nearest exit for any frames in that
+        # deadzone. Depending on which side the frames exit, create an object for that/each side of the deadzone and add to it the
+        # exiting frame(s). Then spread those frames evenly within the space between deadzones (or the edges of the video timeline).
+        # Before iterating onto the next deadzone and repeating this process, check whether the density of frames on one side of the
+        # deadzone would benefit from having one of the frames moved to the other side of the deadzone. Do this by calcuating what the
+        # average gap on either side would be if one frame was moved from the denser side to the less dense side, and if it brings the
+        # value of the two average gaps on either side closer to each other, then go ahead and move a frame from the denser side to the
+        # less dense side.
+        # Then re-evenly space each side of the deadzone. ok, now we can repeat the process and place the next deadzone on the "map".
+        # The code below is for reference, in case any useful logic can be retained - but it might all be less useful than the algorithm
+        # mentioned here in these comments.
         for range in "${deadzones[@]}"; do
             IFS=':' read -r start end <<< "$range"
             for i in "${!frame_nums[@]}"; do
@@ -262,46 +249,23 @@ optimize_frame_distribution() {
             done
         done
 
-        calculate_gaps frame_nums gaps
-        local sum_gaps=$(IFS=+; echo "$((${gaps[*]}))")
-        local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
-
-        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
-            local left_gap=${gaps[i-1]}
-            local right_gap=${gaps[i]}
-            local target_gap=$(echo "scale=0; ($left_gap + $right_gap) / 2" | bc)
-
-            if ((left_gap != target_gap || right_gap != target_gap)); then
-                local new_pos=$((frame_nums[i-1] + target_gap))
-
-                local in_deadzone=false
-                for range in "${deadzones[@]}"; do
-                    IFS=':' read -r start end <<< "$range"
-                    if ((new_pos >= start && new_pos <= end)); then
-                        in_deadzone=true
-                        break
-                    fi
-                done
-
-                if ! $in_deadzone && ((new_pos != frame_nums[i])); then
-                    echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos (old selection: ${old_frame_nums[i]}, left gap: $left_gap, right gap: $right_gap, target gap: $target_gap)"
-                    frame_nums[i]=$new_pos
-                    improved=true
-                fi
-            fi
+        # Calculate current gaps and statistics
+        local gaps=()
+        for ((i=1; i<${#frame_nums[@]}; i++)); do
+            gaps+=($((frame_nums[i] - frame_nums[i-1])))
         done
-
-        calculate_gaps frame_nums gaps
-        sum_gaps=$(IFS=+; echo "$((${gaps[*]}))")
-        avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
+        local sum_gaps=0
+        for gap in "${gaps[@]}"; do
+            sum_gaps=$((sum_gaps + gap))
+        done
+        local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
         local sum_sq_diff=0
         for gap in "${gaps[@]}"; do
             local diff=$(echo "scale=2; $gap - $avg_gap" | bc)
             sum_sq_diff=$(echo "scale=2; $sum_sq_diff + ($diff * $diff)" | bc)
         done
         local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc)
-        echo "DEBUG: After adjustments - Average gap: $avg_gap, Standard deviation: $std_dev"
-
+        echo "DEBUG: Average gap: $avg_gap, Standard deviation: $std_dev"
         if ((iteration > 0)); then
             local improvement=$(echo "scale=3; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
             echo "DEBUG: Improvement: $improvement"
@@ -311,17 +275,30 @@ optimize_frame_distribution() {
             fi
         fi
         prev_std_dev=$std_dev
-
+        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
+            local left_gap=$((frame_nums[i] - frame_nums[i-1]))
+            local right_gap=$((frame_nums[i+1] - frame_nums[i]))
+            local adjustment=$(echo "scale=0; ($right_gap - $left_gap) / 4" | bc)
+            local new_pos=$((frame_nums[i] + adjustment))
+            local in_deadzone=false
+            for range in "${deadzones[@]}"; do
+                IFS=':' read -r start end <<< "$range"
+                if ((new_pos >= start && new_pos <= end)); then
+                    in_deadzone=true
+                    break
+                fi
+            done
+            if ! $in_deadzone && ((new_pos != frame_nums[i])); then
+                echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos"
+                frame_nums[i]=$new_pos
+                improved=true
+            fi
+        done
         if ! $improved; then
             echo "DEBUG: No improvements made in this iteration. Stopping optimization."
             break
         fi
-
-        print_frames_and_gaps $iteration frame_nums gaps
     done
-
-    echo "DEBUG: Final frame numbers: ${frame_nums[*]}"
-    echo "DEBUG: Final gaps: ${gaps[*]}"
 }
 
 add_deadzone() {
