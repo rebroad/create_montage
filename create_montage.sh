@@ -142,6 +142,7 @@ read_deadzones() {
 
 is_in_deadzone() {
     local frame=$1
+    local range
     for range in "${deadzones[@]}"; do
         IFS=':' read -r start end <<< "$range"
         if (( $(echo "$frame >= $start && $frame <= $end" | bc -l) )); then
@@ -167,11 +168,15 @@ generate_montage() {
     optimize_frame_distribution
     echo "DEBUG: Final frame numbers: ${frame_nums[*]}"
     local inputs=()
+    what="video"
+    [ -n "$2" ] && { what="selected range"; }
+    [ -n "$3" ] && { what="selected range"; }
+    [ -n $RESIZE ] && { resizing=" and resizing."; }
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
-        PERCENT=$(echo "scale=2; (${FRAME_NUM} - $start_frame) * 100 / ${range}" | bc)
-        echo "Extracting frame $i (${PERCENT}% of selected range) and resizing."
+        PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
+        echo "Extracting frame $i ($PERCENT% of $what)$resizing"
         if [ "$INTERACTIVE_MODE" = true ]; then
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
@@ -213,13 +218,27 @@ generate_montage() {
 optimize_frame_distribution() {
     read_deadzones
     local max_iterations=100
-    local epsilon=0.01
+    local epsilon=0.001
     local prev_std_dev=0
+    local range
     echo "DEBUG: Starting frame distribution optimization"
     echo "DEBUG: Deadzones: ${deadzones[*]}"
     for ((iteration=0; iteration<max_iterations; iteration++)); do
         local improved=false
         echo "DEBUG: Iteration $iteration"
+
+        # First, move frames out of deadzones.
+        # Technique to implement - iterate through each deadzone. For each deadzone, find the nearest exit for any frames in that
+        # deadzone. Depending on which side the frames exit, create an object for that/each side of the deadzone and add to it the
+        # exiting frame(s). Then spread those frames evenly within the space between deadzones (or the edges of the video timeline).
+        # Before iterating onto the next deadzone and repeating this process, check whether the density of frames on one side of the
+        # deadzone would benefit from having one of the frames moved to the other side of the deadzone. Do this by calcuating what the
+        # average gap on either side would be if one frame was moved from the denser side to the less dense side, and if it brings the
+        # value of the two average gaps on either side closer to each other, then go ahead and move a frame from the denser side to the
+        # less dense side.
+        # Then re-evenly space each side of the deadzone. ok, now we can repeat the process and place the next deadzone on the "map".
+        # The code below is for reference, in case any useful logic can be retained - but it might all be less useful than the algorithm
+        # mentioned here in these comments.
         for range in "${deadzones[@]}"; do
             IFS=':' read -r start end <<< "$range"
             for i in "${!frame_nums[@]}"; do
@@ -235,6 +254,8 @@ optimize_frame_distribution() {
                 fi
             done
         done
+
+        # Calculate current gaps and statistics
         local gaps=()
         for ((i=1; i<${#frame_nums[@]}; i++)); do
             gaps+=($((frame_nums[i] - frame_nums[i-1])))
@@ -252,7 +273,7 @@ optimize_frame_distribution() {
         local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc)
         echo "DEBUG: Average gap: $avg_gap, Standard deviation: $std_dev"
         if ((iteration > 0)); then
-            local improvement=$(echo "scale=2; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
+            local improvement=$(echo "scale=3; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
             echo "DEBUG: Improvement: $improvement"
             if (( $(echo "$improvement < $epsilon" | bc -l) )) && ! $improved; then
                 echo "DEBUG: Optimization complete. No significant improvement."
