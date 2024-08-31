@@ -141,8 +141,8 @@ add_deadzone() {
 
 # Frame distribution function
 frame_distribution() {
-    local -a livezones=()
-    local -a deadzones=()
+    livezones=()
+    deadzones=()
     
     # Read deadzones
     if [ -f "$DEADZONE_FILE" ]; then
@@ -177,13 +177,13 @@ frame_distribution() {
     fi
 
     # Distribute images among livezones
-    local remaining_images=$TOTAL_IMAGES
     local total_livezone_space=0
     for zone in "${livezones[@]}"; do
         IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
-        total_livezone_space=$((total_livezone_space + end - start + 1))
+        total_livezone_space=$((total_livezone_space + end - start + 1)) # Why the +1 ?
     done
 
+    local remaining_images=$TOTAL_IMAGES
     for ((i=0; i<${#livezones[@]}; i++)); do
         IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
         zone_space=$((end - start + 1))
@@ -217,7 +217,7 @@ frame_distribution() {
     for zone in "${livezones[@]}"; do
         IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
         range=$((end - start))
-        step=$(echo "scale=10; ($range - ($prev_deadzone + $next_deadzone) / 2) / ($population - 1)" | bc -l)
+        step=$(echo "scale=10; ($range - ($prev_deadzone + $next_deadzone) / 2) / ($population - 1)" | bc -l)  # Risk of devide by zero!
         for ((i=0; i<population; i++)); do
             frame_nums+=($(printf "%.0f" $(echo "$start + ($prev_deadzone / 2) + $i * $step" | bc -l)))
         done
@@ -227,12 +227,12 @@ frame_distribution() {
 }
 
 generate_montage() {
-    local output_file=$1
-    local start_frame=${2:-0}
-    local end_frame=${3:-$((TOTAL_FRAMES - 1))}
-
-    local inputs=()
-    local what="video"
+    output_file=$1
+    start_frame=${2:-0}
+    end_frame=${3:-$((TOTAL_FRAMES - 1))}
+    range=$((end_frame - start_frame))
+    inputs=()
+    what="video"
     [ -n "$2" ] && { what="selected range"; }
     [ -n "$3" ] && { what="selected range"; }
     [ -n "$RESIZE" ] && { local resizing=" and resizing"; }
