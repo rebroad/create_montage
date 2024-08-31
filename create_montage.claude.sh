@@ -10,18 +10,18 @@ INTERACTIVE_MODE=false
 
 for arg; do
     case "$arg" in
-        *.mp4) VID="$arg" ;;
+        *.mp4) INPUT_VIDEO="$arg" ;;
         *:*) ASPECT_RATIO="$arg" ;;
         *x*) GRID="$arg" ;;
         -i) INTERACTIVE_MODE=true ;;
-        *) [ -z "$START" ] && START="$arg" || END="$arg" ;;
+        *) [ -z "$START_IMAGE" ] && START_IMAGE="$arg" || END_IMAGE="$arg" ;;
     esac
 done
 
-[ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
-[ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
-OUT="${VID%.*}_montage.png"
-DEADZONE_FILE="${VID%.*}_deadzones.txt"
+[ -z "$INPUT_VIDEO" ] && { echo "Error: Video file not specified."; exit 1; }
+[ ! -f "$INPUT_VIDEO" ] && { echo "Error: Video file '$INPUT_VIDEO' does not exist."; exit 1; }
+OUTPUT_MONTAGE="${INPUT_VIDEO%.*}_montage.png"
+DEADZONE_FILE="${INPUT_VIDEO%.*}_deadzones.txt"
 
 FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
 [[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && echo "Detected Windows-native ffmpeg."
@@ -34,25 +34,25 @@ clean_num() {
     echo "$1" | tr -d '[:space:]'
 }
 
-echo "Determining video information for: $VID" | tee -a "$LOG"
-FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>> "$LOG")
-FRAMES=$(clean_num "$FRAMES")
-echo "Total frames determined: $FRAMES" | tee -a "$LOG"
-[[ "$FRAMES" =~ ^[0-9]+$ ]] || { echo "Error: FRAMES is not a valid number: $FRAMES. See $LOG for details."; exit 1; }
+echo "Determining video information for: $INPUT_VIDEO" | tee -a "$LOG"
+TOTAL_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$INPUT_VIDEO")" 2>> "$LOG")
+TOTAL_FRAMES=$(clean_num "$TOTAL_FRAMES")
+echo "Total frames determined: $TOTAL_FRAMES" | tee -a "$LOG"
+[[ "$TOTAL_FRAMES" =~ ^[0-9]+$ ]] || { echo "Error: TOTAL_FRAMES is not a valid number: $TOTAL_FRAMES. See $LOG for details."; exit 1; }
 
 get_dimensions() {
-    echo $(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$(convert_path "$1")")
+    ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$(convert_path "$1")"
 }
 
-if [ -n "$START" ]; then
-    DIM=$(get_dimensions "$START")
+if [ -n "$START_IMAGE" ]; then
+    DIM=$(get_dimensions "$START_IMAGE")
     SW=${DIM%x*}
     SH=${DIM#*x}
     [ -n "$SW" ] && [ -n "$SH" ] && RESIZE=",scale=${SW}:${SH}" || echo "Error: Could not determine START_IMAGE dimensions."
     FRAME_WIDTH=$SW
     FRAME_HEIGHT=$SH
 else
-    DIM=$(get_dimensions "$VID")
+    DIM=$(get_dimensions "$INPUT_VIDEO")
     FRAME_WIDTH=${DIM%x*}
     FRAME_HEIGHT=${DIM#*x}
 fi
@@ -83,8 +83,8 @@ if [ -n "$GRID" ]; then
 elif [ -n "$ASPECT_RATIO" ]; then
     echo "Searching for optimal grid for $ASPECT_RATIO aspect ratio"
     MIN_RATIO_DIFF=1000000
-    for ((y=1; y<=FRAMES; y++)); do
-        x=$(( (FRAMES + y - 1) / y ))
+    for ((y=1; y<=TOTAL_FRAMES; y++)); do
+        x=$(( (TOTAL_FRAMES + y - 1) / y ))
         GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
         echo "Grid ${x}x${y}, ratio: $GRID_RATIO" | tee -a "$LOG"
         RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
@@ -104,10 +104,10 @@ else
     COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
 fi
 
-echo DEBUG COLS=${COLS} ROWS=${ROWS}
-TOTAL=$((COLS * ROWS))
-[ "$TOTAL" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
-[ "$TOTAL" -gt "$FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL) than video frames ($FRAMES)."; exit 1; }
+echo "DEBUG: COLS=${COLS} ROWS=${ROWS}"
+TOTAL_IMAGES=$((COLS * ROWS))
+[ "$TOTAL_IMAGES" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
+[ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL_IMAGES) than video frames ($TOTAL_FRAMES)."; exit 1; }
 
 add_deadzone() {
     local start=$1
@@ -139,28 +139,18 @@ add_deadzone() {
     cat "$DEADZONE_FILE"
 }
 
-# Technique:-
-#
-# Read the deadzones in NUMERICAL order - ensure none overlap each other
-# Livezone objects should store their start and end frame, their population (of images) and an easy way to know the length of the deadzone before and after them.
-# If no deadzone before or after them, then this number is zero.
-#
-# Create livezones starting from from frame 0 to the first deadzone (unless it starts at frame 0)
-# Create livezones for all the spaces between deadzones, up to the last frame in the video (unless any deadzones go up to or beyond the last frame in the video)
-# Populate the livezones with the selections up to TOTAL. Iterate through homeless images (those not given a livezone) sending them to whichever livezone has the smallest
-# density images per space, and if there's a tie, whichever has the more spaces out of those that tied.
- #
- # for each livezone call select_frames where the first argument is the number of images in the livezone, the second argument is its start_frame,
-# the third argument is its end_frame, the 4th argument is the size of the deadzone before it, the 5th argument is the size of the deadzone after it.
-local total_frames=$FRAMES
-local total_images=$TOTAL
-local -a livezones=()
-local -a deadzones=()
+# Frame distribution code
+livezones=()
+deadzones=()
+
+# Read deadzones
 if [ -f "$DEADZONE_FILE" ]; then
     while IFS=':' read -r start end; do
         deadzones+=("$start:$end")
     done < "$DEADZONE_FILE"
 fi
+
+# Sort and validate deadzones
 local prev_end="-1"
 IFS=$'\n' deadzones=($(sort -n -t: -k1,1 <<< "${deadzones[*]}"))
 for zone in "${deadzones[@]}"; do
@@ -172,7 +162,8 @@ for zone in "${deadzones[@]}"; do
     prev_end=$end
 done
 
-local prev_end="-1"
+# Create livezones
+prev_end="-1"
 for zone in "${deadzones[@]}"; do
     IFS=':' read -r start end <<< "$zone"
     if [ "$start" -gt "$((prev_end + 1))" ]; then
@@ -180,11 +171,12 @@ for zone in "${deadzones[@]}"; do
     fi
     prev_end=$end
 done
-if [ "$prev_end" -lt "$((total_frames - 1))" ]; then
-    livezones+=("$((prev_end + 1)):$((total_frames - 1)):0:$((prev_end - (prev_end + 1) + 1)):0")
+if [ "$prev_end" -lt "$((TOTAL_FRAMES - 1))" ]; then
+    livezones+=("$((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$((prev_end - (prev_end + 1) + 1)):0")
 fi
 
-local remaining_images=$total_images
+# Distribute images among livezones
+local remaining_images=$TOTAL_IMAGES
 local total_livezone_space=0
 for zone in "${livezones[@]}"; do
     IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
@@ -197,9 +189,10 @@ for ((i=0; i<${#livezones[@]}; i++)); do
     local zone_images=$((remaining_images * zone_space / total_livezone_space))
     livezones[$i]="$start:$end:$zone_images:$prev_deadzone:$next_deadzone"
     remaining_images=$((remaining_images - zone_images))
-total_livezone_space=$((total_livezone_space - zone_space))
+    total_livezone_space=$((total_livezone_space - zone_space))
 done
 
+# Distribute remaining images
 while [ "$remaining_images" -gt 0 ]; do
     local min_density=999999
     local min_index=-1
@@ -219,15 +212,9 @@ while [ "$remaining_images" -gt 0 ]; do
 done
 
 # Select frames for each livezone
-local population
-local start
-local end
-local prev_deadzone
-local next_deadzone
 frame_nums=()
 for zone in "${livezones[@]}"; do
     IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
-    # Select evenly spaced frames
     local range=$((end - start))
     local step=$(echo "scale=10; ($range - ($prev_deadzone + $next_deadzone) / 2) / ($population - 1)" | bc -l)
     for ((i=0; i<population; i++)); do
@@ -240,35 +227,35 @@ echo "Frame distribution complete. Selected frames: ${frame_nums[*]}"
 generate_montage() {
     local output_file=$1
     local start_frame=${2:-0}
-    local end_frame=${3:-$((FRAMES - 1))}
+    local end_frame=${3:-$((TOTAL_FRAMES - 1))}
 
     local inputs=()
-    what="video"
+    local what="video"
     [ -n "$2" ] && { what="selected range"; }
     [ -n "$3" ] && { what="selected range"; }
-    [ -n $RESIZE ] && { resizing=" and resizing."; }
+    [ -n "$RESIZE" ] && { local resizing=" and resizing"; }
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
         PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
         echo "Extracting frame $i ($PERCENT% of $what)$resizing"
         if [ "$INTERACTIVE_MODE" = true ]; then
-            ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
+            ffmpeg -loglevel error -y -i "$(convert_path "$INPUT_VIDEO")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
-            ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
+            ffmpeg -loglevel error -y -i "$(convert_path "$INPUT_VIDEO")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         fi
         [ ! -f "$OUT_FRAME" ] && { echo "Error: Failed to extract frame $i. See $LOG"; exit 1; }
         inputs+=("-i" "$(convert_path "$OUT_FRAME")")
     done
 
     # Create montage
-    FILTER=""
+    local FILTER=""
     if [ "$ROWS" -eq 1 ]; then
-        FILTER=$(printf "[%d:v]" $(seq 0 $((TOTAL-1))))
-        FILTER+="hstack=inputs=$TOTAL[v]"
+        FILTER=$(printf "[%d:v]" $(seq 0 $((TOTAL_IMAGES-1))))
+        FILTER+="hstack=inputs=$TOTAL_IMAGES[v]"
     elif [ "$COLS" -eq 1 ]; then
-        FILTER=$(printf "[%d:v]" $(seq 0 $((TOTAL-1))))
-        FILTER+="vstack=inputs=$TOTAL[v]"
+        FILTER=$(printf "[%d:v]" $(seq 0 $((TOTAL_IMAGES-1))))
+        FILTER+="vstack=inputs=$TOTAL_IMAGES[v]"
     else
         for ((r=0; r<ROWS; r++)); do
             FILTER+=$(printf "[%d:v]" $(seq $((r*COLS)) $((r*COLS+COLS-1))))
@@ -306,7 +293,7 @@ else
                frame_distribution ;;
             2) read -p "Enter start and end frames: " start end
                generate_montage "${OUT%.*}_intermediate.png" $start $end
-               echo "Intermediate frames montage saved as $temp_montage" ;;
+               echo "Intermediate frames montage saved as ${OUTPUT_MONTAGE%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
             4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
             5) break ;;
