@@ -109,7 +109,13 @@ TOTAL=$((COLS * ROWS))
 [ "$TOTAL" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
 [ "$TOTAL" -gt "$FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL) than video frames ($FRAMES)."; exit 1; }
 
-merge_deadzones() {
+add_deadzone() {
+    local start=$1
+    local end=$2
+    [ -z "$end" ] && end=$start  # If end is not provided, use start as end
+    echo "$start:$end" >> "$DEADZONE_FILE"
+    # Hide the file on Windows after writing
+    [[ "$OSTYPE" == "cygwin"* ]] && attrib +h "$(cygpath -w "$DEADZONE_FILE")" >/dev/null 2>&1
     local temp_file="${DEADZONE_FILE}.temp"
     sort -n -t: -k1,1 "$DEADZONE_FILE" | uniq > "$temp_file"
     local prev_start=""
@@ -129,44 +135,113 @@ merge_deadzones() {
     done < "$temp_file"
     [ -n "$prev_start" ] && echo "${prev_start}:${prev_end}" >> "$DEADZONE_FILE"
     rm "$temp_file"
+    echo "Added and merged deadzones. Current deadzones:"
+    cat "$DEADZONE_FILE"
 }
 
-read_deadzones() {
-    deadzones=()
-    if [ -f "$DEADZONE_FILE" ]; then
-        while IFS=':' read -r start end; do
-            deadzones+=("$start:$end")
-        done < "$DEADZONE_FILE"
+# Technique:-
+#
+# Read the deadzones in NUMERICAL order - ensure none overlap each other
+# Livezone objects should store their start and end frame, their population (of images) and an easy way to know the length of the deadzone before and after them.
+# If no deadzone before or after them, then this number is zero.
+#
+# Create livezones starting from from frame 0 to the first deadzone (unless it starts at frame 0)
+# Create livezones for all the spaces between deadzones, up to the last frame in the video (unless any deadzones go up to or beyond the last frame in the video)
+# Populate the livezones with the selections up to TOTAL. Iterate through homeless images (those not given a livezone) sending them to whichever livezone has the smallest
+# density images per space, and if there's a tie, whichever has the more spaces out of those that tied.
+ #
+ # for each livezone call select_frames where the first argument is the number of images in the livezone, the second argument is its start_frame,
+# the third argument is its end_frame, the 4th argument is the size of the deadzone before it, the 5th argument is the size of the deadzone after it.
+local total_frames=$FRAMES
+local total_images=$TOTAL
+local -a livezones=()
+local -a deadzones=()
+if [ -f "$DEADZONE_FILE" ]; then
+    while IFS=':' read -r start end; do
+        deadzones+=("$start:$end")
+    done < "$DEADZONE_FILE"
+fi
+local prev_end="-1"
+IFS=$'\n' deadzones=($(sort -n -t: -k1,1 <<< "${deadzones[*]}"))
+for zone in "${deadzones[@]}"; do
+    IFS=':' read -r start end <<< "$zone"
+    if [ "$start" -le "$prev_end" ]; then
+        echo "Error: Overlapping or invalid deadzones detected. Please fix the deadzone configuration."
+        exit 1
     fi
-}
+    prev_end=$end
+done
 
-is_in_deadzone() {
-    local frame=$1
-    local range
-    for range in "${deadzones[@]}"; do
-        IFS=':' read -r start end <<< "$range"
-        if (( $(echo "$frame >= $start && $frame <= $end" | bc -l) )); then
-            return 0  # Frame is in a deadzone
+local prev_end="-1"
+for zone in "${deadzones[@]}"; do
+    IFS=':' read -r start end <<< "$zone"
+    if [ "$start" -gt "$((prev_end + 1))" ]; then
+        livezones+=("$((prev_end + 1)):$((start - 1)):0:$((prev_end + 1 == 0 ? 0 : prev_end - (prev_end + 1) + 1)):$((end - start + 1))")
+    fi
+    prev_end=$end
+done
+if [ "$prev_end" -lt "$((total_frames - 1))" ]; then
+    livezones+=("$((prev_end + 1)):$((total_frames - 1)):0:$((prev_end - (prev_end + 1) + 1)):0")
+fi
+
+local remaining_images=$total_images
+local total_livezone_space=0
+for zone in "${livezones[@]}"; do
+    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
+    total_livezone_space=$((total_livezone_space + end - start + 1))
+done
+
+for ((i=0; i<${#livezones[@]}; i++)); do
+    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
+    local zone_space=$((end - start + 1))
+    local zone_images=$((remaining_images * zone_space / total_livezone_space))
+    livezones[$i]="$start:$end:$zone_images:$prev_deadzone:$next_deadzone"
+    remaining_images=$((remaining_images - zone_images))
+total_livezone_space=$((total_livezone_space - zone_space))
+done
+
+while [ "$remaining_images" -gt 0 ]; do
+    local min_density=999999
+    local min_index=-1
+    for ((i=0; i<${#livezones[@]}; i++)); do
+        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
+        local density=$(bc <<< "scale=6; $population / ($end - $start + 1)")
+        if (( $(bc <<< "$density < $min_density") )); then
+            min_density=$density
+            min_index=$i
+        elif (( $(bc <<< "$density == $min_density") )) && [ $((end - start + 1)) -gt $((${livezones[$min_index]%:*:*:*:*} - ${livezones[$min_index]#*:*:*:*:})) ]; then
+            min_index=$i
         fi
     done
-    return 1  # Frame is not in a deadzone
-}
+    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$min_index]}"
+    livezones[$min_index]="$start:$end:$((population + 1)):$prev_deadzone:$next_deadzone"
+    remaining_images=$((remaining_images - 1))
+done
+
+# Select frames for each livezone
+local population
+local start
+local end
+local prev_deadzone
+local next_deadzone
+frame_nums=()
+for zone in "${livezones[@]}"; do
+    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
+    # Select evenly spaced frames
+    local range=$((end - start))
+    local step=$(echo "scale=10; ($range - ($prev_deadzone + $next_deadzone) / 2) / ($population - 1)" | bc -l)
+    for ((i=0; i<population; i++)); do
+        frame_nums+=($(printf "%.0f" $(echo "$start + ($prev_deadzone / 2) + $i * $step" | bc -l)))
+    done
+done
+
+echo "Frame distribution complete. Selected frames: ${frame_nums[*]}"
 
 generate_montage() {
     local output_file=$1
     local start_frame=${2:-0}
     local end_frame=${3:-$((FRAMES - 1))}
-    local frame_nums=()
 
-    # Step 1: Select evenly spaced frames ignoring deadzones
-    local range=$((end_frame - start_frame))
-    local step=$(echo "scale=10; $range / ($TOTAL - 1)" | bc -l)
-    for ((i=0; i<TOTAL; i++)); do
-        frame_nums+=($(printf "%.0f" $(echo "$start_frame + $i * $step" | bc -l)))
-    done
-    echo "DEBUG: Initial frame numbers: ${frame_nums[*]}"
-    optimize_frame_distribution
-    echo "DEBUG: Final frame numbers: ${frame_nums[*]}"
     local inputs=()
     what="video"
     [ -n "$2" ] && { what="selected range"; }
@@ -215,134 +290,23 @@ generate_montage() {
     [ $? -eq 0 ] && [ -f "$output_file" ] && echo "Montage saved as $output_file" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
 }
 
-optimize_frame_distribution() {
-    read_deadzones
-    local max_iterations=100
-    local epsilon=0.001
-    local prev_std_dev=0
-    local range
-    echo "DEBUG: Starting frame distribution optimization"
-    echo "DEBUG: Deadzones: ${deadzones[*]}"
-    for ((iteration=0; iteration<max_iterations; iteration++)); do
-        local improved=false
-        echo "DEBUG: Iteration $iteration"
-
-        # First, move frames out of deadzones.
-        # Technique to implement - iterate through each deadzone. For each deadzone, find the nearest exit for any frames in that
-        # deadzone. Depending on which side the frames exit, create an object for that/each side of the deadzone and add to it the
-        # exiting frame(s). Then spread those frames evenly within the space between deadzones (or the edges of the video timeline).
-        # Before iterating onto the next deadzone and repeating this process, check whether the density of frames on one side of the
-        # deadzone would benefit from having one of the frames moved to the other side of the deadzone. Do this by calcuating what the
-        # average gap on either side would be if one frame was moved from the denser side to the less dense side, and if it brings the
-        # value of the two average gaps on either side closer to each other, then go ahead and move a frame from the denser side to the
-        # less dense side.
-        # Then re-evenly space each side of the deadzone. ok, now we can repeat the process and place the next deadzone on the "map".
-        # The code below is for reference, in case any useful logic can be retained - but it might all be less useful than the algorithm
-        # mentioned here in these comments.
-        for range in "${deadzones[@]}"; do
-            IFS=':' read -r start end <<< "$range"
-            for i in "${!frame_nums[@]}"; do
-                if ((frame_nums[i] >= start && frame_nums[i] <= end)); then
-                    local old_pos=${frame_nums[i]}
-                    if ((i == 0 || frame_nums[i] - start < end - frame_nums[i])); then
-                        frame_nums[i]=$((start - 1))
-                    else
-                        frame_nums[i]=$((end + 1))
-                    fi
-                    echo "DEBUG: Moved frame $i from $old_pos to ${frame_nums[i]} (deadzone: $start-$end)"
-                    improved=true
-                fi
-            done
-        done
-
-        # Calculate current gaps and statistics
-        local gaps=()
-        for ((i=1; i<${#frame_nums[@]}; i++)); do
-            gaps+=($((frame_nums[i] - frame_nums[i-1])))
-        done
-        local sum_gaps=0
-        for gap in "${gaps[@]}"; do
-            sum_gaps=$((sum_gaps + gap))
-        done
-        local avg_gap=$(echo "scale=2; $sum_gaps / ${#gaps[@]}" | bc)
-        local sum_sq_diff=0
-        for gap in "${gaps[@]}"; do
-            local diff=$(echo "scale=2; $gap - $avg_gap" | bc)
-            sum_sq_diff=$(echo "scale=2; $sum_sq_diff + ($diff * $diff)" | bc)
-        done
-        local std_dev=$(echo "scale=2; sqrt($sum_sq_diff / ${#gaps[@]})" | bc)
-        echo "DEBUG: Average gap: $avg_gap, Standard deviation: $std_dev"
-        if ((iteration > 0)); then
-            local improvement=$(echo "scale=3; ($prev_std_dev - $std_dev) / $prev_std_dev" | bc)
-            echo "DEBUG: Improvement: $improvement"
-            if (( $(echo "$improvement < $epsilon" | bc -l) )) && ! $improved; then
-                echo "DEBUG: Optimization complete. No significant improvement."
-                break
-            fi
-        fi
-        prev_std_dev=$std_dev
-        for ((i=1; i<${#frame_nums[@]}-1; i++)); do
-            local left_gap=$((frame_nums[i] - frame_nums[i-1]))
-            local right_gap=$((frame_nums[i+1] - frame_nums[i]))
-            local adjustment=$(echo "scale=0; ($right_gap - $left_gap) / 4" | bc)
-            local new_pos=$((frame_nums[i] + adjustment))
-            local in_deadzone=false
-            for range in "${deadzones[@]}"; do
-                IFS=':' read -r start end <<< "$range"
-                if ((new_pos >= start && new_pos <= end)); then
-                    in_deadzone=true
-                    break
-                fi
-            done
-            if ! $in_deadzone && ((new_pos != frame_nums[i])); then
-                echo "DEBUG: Adjusted frame $i from ${frame_nums[i]} to $new_pos"
-                frame_nums[i]=$new_pos
-                improved=true
-            fi
-        done
-        if ! $improved; then
-            echo "DEBUG: No improvements made in this iteration. Stopping optimization."
-            break
-        fi
-    done
-}
-
-add_deadzone() {
-    local start=$1
-    local end=$2
-    [ -z "$end" ] && end=$start  # If end is not provided, use start as end
-    echo "$start:$end" >> "$DEADZONE_FILE"
-    # Hide the file on Windows after writing
-    [[ "$OSTYPE" == "cygwin"* ]] && attrib +h "$(cygpath -w "$DEADZONE_FILE")" >/dev/null 2>&1
-    merge_deadzones
-    echo "Added and merged deadzones. Current deadzones:"
-    cat "$DEADZONE_FILE"
-}
-
-show_frames_between() {
-    local start=$1
-    local end=$2
-    local temp_montage="${OUT%.*}_intermediate.png"
-    generate_montage "$temp_montage" $start $end
-    echo "Intermediate frames montage saved as $temp_montage"
-}
-
 # Main execution
+frame_distribution
 if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
-fi
-
-# Interactive mode
-if [ "$INTERACTIVE_MODE" = true ]; then
+else
     while true; do
+        echo "Current frame distribution: ${frame_nums[*]}"
         echo "1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage"
         echo "4. Show current deadzones  5. Exit"
         read -p "Enter your choice: " choice
         case $choice in
             1) read -p "Enter start and end frames: " start end
-               add_deadzone $start $end ;;
+               add_deadzone $start $end
+               frame_distribution ;;
             2) read -p "Enter start and end frames: " start end
-               show_frames_between $start $end ;;
+               generate_montage "${OUT%.*}_intermediate.png" $start $end
+               echo "Intermediate frames montage saved as $temp_montage" ;;
             3) generate_montage "$OUT" ;;
             4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
             5) break ;;
