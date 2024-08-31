@@ -150,6 +150,8 @@ frame_distribution() {
     echo "DEBUG: Reading deadzones"
     if [ -f "$DEADZONE_FILE" ]; then
         while IFS=':' read -r start end; do
+            start=$(trim "$start")
+            end=$(trim "$end")
             deadzones+=("$start:$end")
             echo "DEBUG: Added deadzone $start:$end"
         done < "$DEADZONE_FILE"
@@ -157,20 +159,20 @@ frame_distribution() {
     
     echo "DEBUG: Creating livezones"
     prev_end="-1"
+    prev_deadzone_size=0
     for zone in "${deadzones[@]}"; do
         IFS=':' read -r start end <<< "$zone"
         start=$(trim "$start")
         end=$(trim "$end")
         if [ "$start" -gt "$((prev_end + 1))" ]; then
-            prev_deadzone_size=$((prev_end + 1 == 0 ? 0 : prev_end - prev_end + 1))
             next_deadzone_size=$((end - start + 1))
             livezones+=("$((prev_end + 1)):$((start - 1)):0:$prev_deadzone_size:$next_deadzone_size")
             echo "DEBUG: Added livezone $((prev_end + 1)):$((start - 1)):0:$prev_deadzone_size:$next_deadzone_size"
         fi
         prev_end=$end
+        prev_deadzone_size=$next_deadzone_size
     done
     if [ "$prev_end" -lt "$((TOTAL_FRAMES - 1))" ]; then
-        prev_deadzone_size=$((prev_end - prev_end + 1))
         livezones+=("$((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$prev_deadzone_size:0")
         echo "DEBUG: Added final livezone $((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$prev_deadzone_size:0"
     fi
@@ -196,7 +198,7 @@ frame_distribution() {
     done
 
     echo "DEBUG: Distributing remaining images"
-    while [ "$remaining_images" -gt 0 ]; do
+    while [ "$remaining_images" -gt 0 ]; do # Is this section ever used?!
         min_density=999999
         min_index=-1
         for ((i=0; i<${#livezones[@]}; i++)); do
