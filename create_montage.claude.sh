@@ -20,7 +20,7 @@ done
 
 [ -z "$INPUT_VIDEO" ] && { echo "Error: Video file not specified."; exit 1; }
 [ ! -f "$INPUT_VIDEO" ] && { echo "Error: Video file '$INPUT_VIDEO' does not exist."; exit 1; }
-OUTPUT_MONTAGE="${INPUT_VIDEO%.*}_montage.png"
+OUT="${INPUT_VIDEO%.*}_montage.png"
 DEADZONE_FILE="${INPUT_VIDEO%.*}_deadzones.txt"
 
 FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
@@ -139,90 +139,92 @@ add_deadzone() {
     cat "$DEADZONE_FILE"
 }
 
-# Frame distribution code
-livezones=()
-deadzones=()
-
-# Read deadzones
-if [ -f "$DEADZONE_FILE" ]; then
-    while IFS=':' read -r start end; do
-        deadzones+=("$start:$end")
-    done < "$DEADZONE_FILE"
-fi
-
-# Sort and validate deadzones
-local prev_end="-1"
-IFS=$'\n' deadzones=($(sort -n -t: -k1,1 <<< "${deadzones[*]}"))
-for zone in "${deadzones[@]}"; do
-    IFS=':' read -r start end <<< "$zone"
-    if [ "$start" -le "$prev_end" ]; then
-        echo "Error: Overlapping or invalid deadzones detected. Please fix the deadzone configuration."
-        exit 1
+# Frame distribution function
+frame_distribution() {
+    local -a livezones=()
+    local -a deadzones=()
+    
+    # Read deadzones
+    if [ -f "$DEADZONE_FILE" ]; then
+        while IFS=':' read -r start end; do
+            deadzones+=("$start:$end")
+        done < "$DEADZONE_FILE"
     fi
-    prev_end=$end
-done
+    
+    # Sort and validate deadzones
+    local prev_end="-1"
+    IFS=$'\n' deadzones=($(sort -n -t: -k1,1 <<< "${deadzones[*]}"))
+    for zone in "${deadzones[@]}"; do
+        IFS=':' read -r start end <<< "$zone"
+        if [ "$start" -le "$prev_end" ]; then
+            echo "Error: Overlapping or invalid deadzones detected. Please fix the deadzone configuration."
+            exit 1
+        fi
+        prev_end=$end
+    done
 
-# Create livezones
-prev_end="-1"
-for zone in "${deadzones[@]}"; do
-    IFS=':' read -r start end <<< "$zone"
-    if [ "$start" -gt "$((prev_end + 1))" ]; then
-        livezones+=("$((prev_end + 1)):$((start - 1)):0:$((prev_end + 1 == 0 ? 0 : prev_end - (prev_end + 1) + 1)):$((end - start + 1))")
+    # Create livezones
+    prev_end="-1"
+    for zone in "${deadzones[@]}"; do
+        IFS=':' read -r start end <<< "$zone"
+        if [ "$start" -gt "$((prev_end + 1))" ]; then
+            livezones+=("$((prev_end + 1)):$((start - 1)):0:$((prev_end + 1 == 0 ? 0 : prev_end - (prev_end + 1) + 1)):$((end - start + 1))")
+        fi
+        prev_end=$end
+    done
+    if [ "$prev_end" -lt "$((TOTAL_FRAMES - 1))" ]; then
+        livezones+=("$((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$((prev_end - (prev_end + 1) + 1)):0")
     fi
-    prev_end=$end
-done
-if [ "$prev_end" -lt "$((TOTAL_FRAMES - 1))" ]; then
-    livezones+=("$((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$((prev_end - (prev_end + 1) + 1)):0")
-fi
 
-# Distribute images among livezones
-local remaining_images=$TOTAL_IMAGES
-local total_livezone_space=0
-for zone in "${livezones[@]}"; do
-    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
-    total_livezone_space=$((total_livezone_space + end - start + 1))
-done
+    # Distribute images among livezones
+    local remaining_images=$TOTAL_IMAGES
+    local total_livezone_space=0
+    for zone in "${livezones[@]}"; do
+        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
+        total_livezone_space=$((total_livezone_space + end - start + 1))
+    done
 
-for ((i=0; i<${#livezones[@]}; i++)); do
-    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
-    local zone_space=$((end - start + 1))
-    local zone_images=$((remaining_images * zone_space / total_livezone_space))
-    livezones[$i]="$start:$end:$zone_images:$prev_deadzone:$next_deadzone"
-    remaining_images=$((remaining_images - zone_images))
-    total_livezone_space=$((total_livezone_space - zone_space))
-done
-
-# Distribute remaining images
-while [ "$remaining_images" -gt 0 ]; do
-    local min_density=999999
-    local min_index=-1
     for ((i=0; i<${#livezones[@]}; i++)); do
         IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
-        local density=$(bc <<< "scale=6; $population / ($end - $start + 1)")
-        if (( $(bc <<< "$density < $min_density") )); then
-            min_density=$density
-            min_index=$i
-        elif (( $(bc <<< "$density == $min_density") )) && [ $((end - start + 1)) -gt $((${livezones[$min_index]%:*:*:*:*} - ${livezones[$min_index]#*:*:*:*:})) ]; then
-            min_index=$i
-        fi
+        zone_space=$((end - start + 1))
+        zone_images=$((remaining_images * zone_space / total_livezone_space))
+        livezones[$i]="$start:$end:$zone_images:$prev_deadzone:$next_deadzone"
+        remaining_images=$((remaining_images - zone_images))
+        total_livezone_space=$((total_livezone_space - zone_space))
     done
-    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$min_index]}"
-    livezones[$min_index]="$start:$end:$((population + 1)):$prev_deadzone:$next_deadzone"
-    remaining_images=$((remaining_images - 1))
-done
 
-# Select frames for each livezone
-frame_nums=()
-for zone in "${livezones[@]}"; do
-    IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
-    local range=$((end - start))
-    local step=$(echo "scale=10; ($range - ($prev_deadzone + $next_deadzone) / 2) / ($population - 1)" | bc -l)
-    for ((i=0; i<population; i++)); do
-        frame_nums+=($(printf "%.0f" $(echo "$start + ($prev_deadzone / 2) + $i * $step" | bc -l)))
+    # Distribute remaining images
+    while [ "$remaining_images" -gt 0 ]; do
+        min_density=999999
+        min_index=-1
+        for ((i=0; i<${#livezones[@]}; i++)); do
+            IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
+            density=$(bc <<< "scale=6; $population / ($end - $start + 1)")
+            if (( $(bc <<< "$density < $min_density") )); then
+                min_density=$density
+                min_index=$i
+            elif (( $(bc <<< "$density == $min_density") )) && [ $((end - start + 1)) -gt $((${livezones[$min_index]%:*:*:*:*} - ${livezones[$min_index]#*:*:*:*:})) ]; then
+                min_index=$i
+            fi
+        done
+        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$min_index]}"
+        livezones[$min_index]="$start:$end:$((population + 1)):$prev_deadzone:$next_deadzone"
+        remaining_images=$((remaining_images - 1))
     done
-done
 
-echo "Frame distribution complete. Selected frames: ${frame_nums[*]}"
+    # Select frames for each livezone
+    frame_nums=()
+    for zone in "${livezones[@]}"; do
+        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
+        range=$((end - start))
+        step=$(echo "scale=10; ($range - ($prev_deadzone + $next_deadzone) / 2) / ($population - 1)" | bc -l)
+        for ((i=0; i<population; i++)); do
+            frame_nums+=($(printf "%.0f" $(echo "$start + ($prev_deadzone / 2) + $i * $step" | bc -l)))
+        done
+    done
+
+    echo "Frame distribution complete. Selected frames: ${frame_nums[*]}"
+}
 
 generate_montage() {
     local output_file=$1
@@ -279,6 +281,7 @@ generate_montage() {
 
 # Main execution
 frame_distribution
+
 if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
 else
@@ -293,7 +296,7 @@ else
                frame_distribution ;;
             2) read -p "Enter start and end frames: " start end
                generate_montage "${OUT%.*}_intermediate.png" $start $end
-               echo "Intermediate frames montage saved as ${OUTPUT_MONTAGE%.*}_intermediate.png" ;;
+               echo "Intermediate frames montage saved as ${OUT%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
             4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
             5) break ;;
