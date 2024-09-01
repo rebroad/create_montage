@@ -10,7 +10,7 @@ INTERACTIVE_MODE=false
 
 for arg; do
     case "$arg" in
-        *.mp4) INPUT_VIDEO="$arg" ;;
+        *.mp4) VID="$arg" ;;
         *:*) ASPECT_RATIO="$arg" ;;
         *x*) GRID="$arg" ;;
         -i) INTERACTIVE_MODE=true ;;
@@ -18,10 +18,10 @@ for arg; do
     esac
 done
 
-[ -z "$INPUT_VIDEO" ] && { echo "Error: Video file not specified."; exit 1; }
-[ ! -f "$INPUT_VIDEO" ] && { echo "Error: Video file '$INPUT_VIDEO' does not exist."; exit 1; }
-OUT="${INPUT_VIDEO%.*}_montage.png"
-DEADZONE_FILE="${INPUT_VIDEO%.*}_deadzones.txt"
+[ -z "$VID" ] && { echo "Error: Video file not specified."; exit 1; }
+[ ! -f "$VID" ] && { echo "Error: Video file '$VID' does not exist."; exit 1; }
+OUT="${VID%.*}_montage.png"
+DEADZONE_FILE="${VID%.*}_deadzones.txt"
 
 FFMPEG_VERSION=$(ffmpeg -version | grep -i "built with gcc")
 [[ "$FFMPEG_VERSION" == *"MSYS2"* ]] && echo "Detected Windows-native ffmpeg."
@@ -34,8 +34,8 @@ trim() {
     echo "$1" | tr -d '[:space:]'
 }
 
-echo "Determining video information for: $INPUT_VIDEO" | tee -a "$LOG"
-TOTAL_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$INPUT_VIDEO")" 2>> "$LOG")
+echo "Determining video information for: $VID" | tee -a "$LOG"
+TOTAL_FRAMES=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$(convert_path "$VID")" 2>> "$LOG")
 TOTAL_FRAMES=$(trim "$TOTAL_FRAMES")
 echo "Total frames determined: $TOTAL_FRAMES" | tee -a "$LOG"
 [[ "$TOTAL_FRAMES" =~ ^[0-9]+$ ]] || { echo "Error: TOTAL_FRAMES is not a valid number: $TOTAL_FRAMES. See $LOG for details."; exit 1; }
@@ -52,7 +52,7 @@ if [ -n "$START_IMAGE" ]; then
     FRAME_WIDTH=$SW
     FRAME_HEIGHT=$SH
 else
-    DIM=$(get_dimensions "$INPUT_VIDEO")
+    DIM=$(get_dimensions "$VID")
     FRAME_WIDTH=${DIM%x*}
     FRAME_HEIGHT=${DIM#*x}
 fi
@@ -61,12 +61,42 @@ FRAME_WIDTH=$(trim "$FRAME_WIDTH")
 FRAME_HEIGHT=$(trim "$FRAME_HEIGHT")
 
 if [ -n "$ASPECT_RATIO" ]; then
-    IFS=':' read -r WIDTH HEIGHT <<< "$ASPECT_RATIO"
+    IFS=':' read WIDTH HEIGHT <<< "$ASPECT_RATIO"
 else
     WIDTH=16; HEIGHT=9
 fi
 TARGET_RATIO=$(bc -l <<< "scale=10; $WIDTH/$HEIGHT")
 echo "Target aspect ratio: $WIDTH:$HEIGHT ($TARGET_RATIO)"
+
+AVAILABLE_FRAMES=$TOTAL_FRAMES
+echo DEBUG calculate AVAILABLE_FRAMES
+if [ -f "$DEADZONE_FILE" ]; then
+    while IFS=':' read start end; do
+        end=$(trim "$end")
+        AVAILABLE_FRAMES=$((AVAILABLE_FRAMES - (end - start + 1)))
+    done < "$DEADZONE_FILE"
+fi
+echo "Total available frames (excluding deadzones): $AVAILABLE_FRAMES"
+
+find_optimal_grid() {
+    echo "Searching for optimal grid for $WIDTH:$HEIGHT aspect ratio"
+    MIN_RATIO_DIFF=1000000
+    for ((y=1; y<=AVAILABLE_FRAMES; y++)); do
+        x=$(( (AVAILABLE_FRAMES + y - 1) / y ))
+        GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
+        echo "Grid ${x}x${y}, ratio: $GRID_RATIO" | tee -a "$LOG"
+        RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
+        if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
+            MIN_RATIO_DIFF=$RATIO_DIFF
+            COLS=$x
+            ROWS=$y
+            echo "Best grid so far: ${COLS}x${ROWS}"
+        elif [ ! -n "$1" ] || [ $y -gt "$1" ]; then
+            break
+        fi
+    done
+    echo "Optimal grid for aspect ratio $ASPECT_RATIO: ${COLS}x${ROWS}"
+}
 
 if [ -n "$GRID" ]; then
     if [[ "$GRID" =~ ^x[0-9]+$ ]]; then
@@ -81,27 +111,10 @@ if [ -n "$GRID" ]; then
     fi
     echo "Using grid: ${COLS}x${ROWS}"
 elif [ -n "$ASPECT_RATIO" ]; then
-    echo "Searching for optimal grid for $ASPECT_RATIO aspect ratio"
-    MIN_RATIO_DIFF=1000000
-    for ((y=1; y<=TOTAL_FRAMES; y++)); do
-        x=$(( (TOTAL_FRAMES + y - 1) / y ))
-        GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
-        echo "Grid ${x}x${y}, ratio: $GRID_RATIO" | tee -a "$LOG"
-        RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
-        if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
-            MIN_RATIO_DIFF=$RATIO_DIFF
-            COLS=$x
-            ROWS=$y
-            echo "Best grid so far: ${COLS}x${ROWS}"
-        else
-            break
-        fi
-    done
-    echo "Optimal grid for aspect ratio $ASPECT_RATIO: ${COLS}x${ROWS}"
+    find_optimal_grid
 else
     echo "No grid or aspect ratio specified. Using default 3 row grid."
-    ROWS=3
-    COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
+    find_optimal_grid 3
 fi
 
 echo "DEBUG: COLS=${COLS} ROWS=${ROWS}"
@@ -121,8 +134,7 @@ add_deadzone() {
     prev_start=""
     prev_end=""
     : > "$DEADZONE_FILE"
-    while IFS=':' read -r start end; do
-        start=$(trim "$start")
+    while IFS=':' read start end; do
         end=$(trim "$end")
         if [ -z "$prev_start" ]; then
             prev_start=$start
@@ -149,8 +161,7 @@ frame_distribution() {
     
     echo "DEBUG: Reading deadzones"
     if [ -f "$DEADZONE_FILE" ]; then
-        while IFS=':' read -r start end; do
-            start=$(trim "$start")
+        while IFS=':' read start end; do
             end=$(trim "$end")
             deadzones+=("$start:$end")
             echo "DEBUG: Added deadzone $start:$end"
@@ -161,8 +172,7 @@ frame_distribution() {
     prev_end="-1"
     prev_deadzone_size=0
     for zone in "${deadzones[@]}"; do
-        IFS=':' read -r start end <<< "$zone"
-        start=$(trim "$start")
+        IFS=':' read start end <<< "$zone"
         end=$(trim "$end")
         if [ "$start" -gt "$((prev_end + 1))" ]; then
             next_deadzone_size=$((end - start + 1))
@@ -180,7 +190,7 @@ frame_distribution() {
     echo "DEBUG: Calculating total live space"
     total_live_space=0
     for zone in "${livezones[@]}"; do
-        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
+        IFS=':' read start end population prev_deadzone next_deadzone <<< "$zone"
         total_live_space=$((total_live_space + end - start + 1))
     done
     echo "DEBUG: Total live space: $total_live_space"
@@ -188,7 +198,7 @@ frame_distribution() {
     echo "DEBUG: Distributing images across livezones"
     local remaining_images=$TOTAL_IMAGES
     for ((i=0; i<${#livezones[@]}; i++)); do
-        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
+        IFS=':' read start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
         zone_space=$((end - start + 1))
         zone_images=$((remaining_images * zone_space / total_live_space))
         livezones[$i]="$start:$end:$zone_images:$prev_deadzone:$next_deadzone"
@@ -202,7 +212,7 @@ frame_distribution() {
         min_density=999999
         min_index=-1
         for ((i=0; i<${#livezones[@]}; i++)); do
-            IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
+            IFS=':' read start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
             density=$(bc -l <<< "scale=6; $population / ($end - $start + 1)")
             echo "DEBUG: Zone $i density: $density"
             if (( $(bc -l <<< "$density < $min_density") )); then
@@ -212,7 +222,7 @@ frame_distribution() {
                 min_index=$i
             fi
         done
-        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "${livezones[$min_index]}"
+        IFS=':' read start end population prev_deadzone next_deadzone <<< "${livezones[$min_index]}"
         livezones[$min_index]="$start:$end:$((population + 1)):$prev_deadzone:$next_deadzone"
         echo "DEBUG: Updated livezone $min_index: ${livezones[$min_index]}"
         remaining_images=$((remaining_images - 1))
@@ -221,7 +231,7 @@ frame_distribution() {
     echo "DEBUG: Selecting frames for each livezone"
     frame_nums=()
     for zone in "${livezones[@]}"; do
-        IFS=':' read -r start end population prev_deadzone next_deadzone <<< "$zone"
+        IFS=':' read start end population prev_deadzone next_deadzone <<< "$zone"
         range=$((end - start))
         step=$(bc -l <<< "scale=10; $range / ($population - 1)") # Risk of divide by 0
         echo "DEBUG: Zone $start:$end, population: $population, step: $step"
@@ -248,9 +258,9 @@ generate_montage() {
         PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
         echo "Extracting frame $i ($PERCENT% of $what)$resizing"
         if [ "$INTERACTIVE_MODE" = true ]; then
-            ffmpeg -loglevel error -y -i "$(convert_path "$INPUT_VIDEO")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
+            ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
-            ffmpeg -loglevel error -y -i "$(convert_path "$INPUT_VIDEO")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
+            ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         fi
         [ ! -f "$OUT_FRAME" ] && { echo "Error: Failed to extract frame $i. See $LOG"; exit 1; }
         inputs+=("-i" "$(convert_path "$OUT_FRAME")")
@@ -287,7 +297,6 @@ generate_montage() {
 
 # Main execution
 frame_distribution
-
 if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
 else
