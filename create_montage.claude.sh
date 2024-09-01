@@ -68,14 +68,17 @@ fi
 TARGET_RATIO=$(bc -l <<< "scale=10; $WIDTH/$HEIGHT")
 echo "Target aspect ratio: $WIDTH:$HEIGHT ($TARGET_RATIO)"
 
-AVAILABLE_FRAMES=$TOTAL_FRAMES
-echo DEBUG calculate AVAILABLE_FRAMES
-if [ -f "$DEADZONE_FILE" ]; then
-    while IFS=':' read start end; do
-        end=$(trim "$end")
-        AVAILABLE_FRAMES=$((AVAILABLE_FRAMES - (end - start + 1)))
-    done < "$DEADZONE_FILE"
-fi
+calc_available_frames() {
+    local num=$TOTAL_FRAMES
+    if [ -f "$DEADZONE_FILE" ]; then
+        while IFS=':' read start end; do
+            end=$(trim "$end")
+            num=$((num - (end - start + 1)))
+        done < "$DEADZONE_FILE"
+    fi
+    echo "$num"
+}
+AVAILABLE_FRAMES=$(calc_available_frames)
 echo "Total available frames (excluding deadzones): $AVAILABLE_FRAMES"
 
 find_optimal_grid() {
@@ -187,24 +190,17 @@ frame_distribution() {
         echo "DEBUG: Added final livezone $((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$prev_deadzone_size:0"
     fi
 
-    echo "DEBUG: Calculating total live space"
-    total_live_space=0
-    for zone in "${livezones[@]}"; do
-        IFS=':' read start end population prev_deadzone next_deadzone <<< "$zone"
-        total_live_space=$((total_live_space + end - start + 1))
-    done
-    echo "DEBUG: Total live space: $total_live_space"
-
     echo "DEBUG: Distributing images across livezones"
+    local remaining_frames=$(calc_available_frames)
     local remaining_images=$TOTAL_IMAGES
     for ((i=0; i<${#livezones[@]}; i++)); do
         IFS=':' read start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
         zone_space=$((end - start + 1))
-        zone_images=$((remaining_images * zone_space / total_live_space))
+        zone_images=$((remaining_images * zone_space / remaining_frames))
         livezones[$i]="$start:$end:$zone_images:$prev_deadzone:$next_deadzone"
         echo "DEBUG: Updated livezone $i: ${livezones[$i]}"
         remaining_images=$((remaining_images - zone_images))
-        total_live_space=$((total_live_space - zone_space))
+        remaining_frames=$((remaining_frames - zone_space))
     done
 
     echo "DEBUG: Selecting frames for each livezone"
