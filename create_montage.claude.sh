@@ -123,9 +123,9 @@ TOTAL_IMAGES=$((COLS * ROWS))
 [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL_IMAGES) than video frames ($TOTAL_FRAMES)."; exit 1; }
 
 add_deadzone() {
-    start=$(trim "$1")
-    end=$(trim "$2")
-    [ -z "$end" ] && end=$start  # If end is not provided, use start as end
+    start="$1"
+    end="$2"
+    [ -z "$end" ] && end=$start
     echo "$start:$end" >> "$DEADZONE_FILE"
     # Hide the file on Windows after writing
     [[ "$OSTYPE" == "cygwin"* ]] && attrib +h "$(cygpath -w "$DEADZONE_FILE")" >/dev/null 2>&1
@@ -139,12 +139,12 @@ add_deadzone() {
         if [ -z "$prev_start" ]; then
             prev_start=$start
             prev_end=$end
-        elif [ "$start" -le $((prev_end + 1)) ]; then
-            prev_end="$((end > prev_end ? end : prev_end))"
+        elif [ $start -le $((prev_end + 1)) ]; then
+            prev_end=$((end > prev_end ? end : prev_end))
         else
             echo "${prev_start}:${prev_end}" >> "$DEADZONE_FILE"
-            prev_start="$start"
-            prev_end="$end"
+            prev_start=$start
+            prev_end=$end
         fi
     done < "$temp_file"
     [ -n "$prev_start" ] && echo "${prev_start}:${prev_end}" >> "$DEADZONE_FILE"
@@ -205,27 +205,6 @@ frame_distribution() {
         echo "DEBUG: Updated livezone $i: ${livezones[$i]}"
         remaining_images=$((remaining_images - zone_images))
         total_live_space=$((total_live_space - zone_space))
-    done
-
-    echo "DEBUG: Distributing remaining images"
-    while [ "$remaining_images" -gt 0 ]; do # Is this section ever used?!
-        min_density=999999
-        min_index=-1
-        for ((i=0; i<${#livezones[@]}; i++)); do
-            IFS=':' read start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
-            density=$(bc -l <<< "scale=6; $population / ($end - $start + 1)")
-            echo "DEBUG: Zone $i density: $density"
-            if (( $(bc -l <<< "$density < $min_density") )); then
-                min_density=$density
-                min_index=$i
-            elif (( $(bc -l <<< "$density == $min_density") )) && [ $((end - start + 1)) -gt $((${livezones[$min_index]%:*:*:*:*} - ${livezones[$min_index]#*:*:*:*:})) ]; then
-                min_index=$i
-            fi
-        done
-        IFS=':' read start end population prev_deadzone next_deadzone <<< "${livezones[$min_index]}"
-        livezones[$min_index]="$start:$end:$((population + 1)):$prev_deadzone:$next_deadzone"
-        echo "DEBUG: Updated livezone $min_index: ${livezones[$min_index]}"
-        remaining_images=$((remaining_images - 1))
     done
 
     echo "DEBUG: Selecting frames for each livezone"
