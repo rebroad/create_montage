@@ -179,15 +179,17 @@ frame_distribution() {
         end=$(trim "$end")
         if [ "$start" -gt "$((prev_end + 1))" ]; then
             next_deadzone_size=$((end - start + 1))
-            livezones+=("$((prev_end + 1)):$((start - 1)):0:$prev_deadzone_size:$next_deadzone_size")
-            echo "DEBUG: Added livezone $((prev_end + 1)):$((start - 1)):0:$prev_deadzone_size:$next_deadzone_size"
+            livezone="$((prev_end + 1)):$((start - 1)):0:$prev_deadzone_size:$next_deadzone_size"
+            livezones+=("$livezone")
+            echo "DEBUG: Added livezone $livezone"
         fi
         prev_end=$end
         prev_deadzone_size=$next_deadzone_size
     done
     if [ "$prev_end" -lt "$((TOTAL_FRAMES - 1))" ]; then
-        livezones+=("$((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$prev_deadzone_size:0")
-        echo "DEBUG: Added final livezone $((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$prev_deadzone_size:0"
+        livezone="$((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$prev_deadzone_size:0"
+        livezones+=("$livezone")
+        echo "DEBUG: Added final livezone $livezone"
     fi
 
     echo "DEBUG: Distributing images across livezones"
