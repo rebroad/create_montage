@@ -82,6 +82,8 @@ AVAILABLE_FRAMES=$(calc_available_frames)
 echo "Total available frames (excluding deadzones): $AVAILABLE_FRAMES"
 
 find_optimal_grid() {
+    local target_rows=$1
+    local target_cols=$2
     echo "Searching for optimal grid for $WIDTH:$HEIGHT aspect ratio"
     MIN_RATIO_DIFF=1000000
     for ((y=1; y<=AVAILABLE_FRAMES; y++)); do
@@ -98,7 +100,7 @@ find_optimal_grid() {
             break
         fi
     done
-    echo "Optimal grid for aspect ratio $ASPECT_RATIO: ${COLS}x${ROWS}"
+    echo "Optimal grid: ${COLS}x${ROWS}"
 }
 
 if [ -n "$GRID" ]; then
@@ -216,6 +218,8 @@ frame_distribution() {
             frame_nums+=($frame)
         done
     done
+
+    echo "Selected frames: ${frame_nums[*]}"
 }
 
 generate_montage() {
@@ -261,7 +265,6 @@ generate_montage() {
 
     echo "Creating montage..." | tee -a "$LOG"
     echo "Filter complex: $FILTER" | tee -a "$LOG"
-    echo "inputs = ${inputs[@]}" | tee -a "$LOG"
 
     # Suppress Fontconfig warnings
     export FONTCONFIG_FILE="/dev/null"
