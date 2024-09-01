@@ -91,7 +91,7 @@ find_optimal_grid() {
             COLS=$x
             ROWS=$y
             echo "Best grid so far: ${COLS}x${ROWS}"
-        elif [ ! -n "$1" ] || [ $y -gt "$1" ]; then
+        else
             break
         fi
     done
