@@ -161,7 +161,7 @@ frame_distribution() {
     echo "DEBUG: Entering frame_distribution function"
     livezones=()
     deadzones=()
-    
+
     echo "DEBUG: Reading deadzones"
     if [ -f "$DEADZONE_FILE" ]; then
         while IFS=':' read start end; do
@@ -228,7 +228,7 @@ generate_montage() {
     what="video"
     [ -n "$2" ] && { what="selected range"; }
     [ -n "$3" ] && { what="selected range"; }
-    [ -n "$RESIZE" ] && { local resizing=" and resizing"; }
+    [ -n "$RESIZE" ] && { resizing=" and resizing"; }
     for i in "${!frame_nums[@]}"; do
         FRAME_NUM=${frame_nums[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
@@ -244,7 +244,7 @@ generate_montage() {
     done
 
     # Create montage
-    local FILTER=""
+    FILTER=""
     if [ "$ROWS" -eq 1 ]; then
         FILTER=$(printf "[%d:v]" $(seq 0 $((TOTAL_IMAGES-1))))
         FILTER+="hstack=inputs=$TOTAL_IMAGES[v]"
