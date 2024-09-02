@@ -279,7 +279,6 @@ if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
 else
     while true; do
-        echo "Current frame distribution: ${frame_nums[*]}"
         echo "1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage"
         echo "4. Show current deadzones  5. Exit"
         read -p "Enter your choice: " choice
@@ -288,7 +287,7 @@ else
                add_deadzone $start $end
                frame_distribution ;;
             2) read -p "Enter start and end frames: " start end
-               generate_montage "${OUT%.*}_intermediate.png" $start $end
+               generate_montage "${OUT%.*}_intermediate.png" $start $end # This no longer works as it needs to ignore deadzones and re-do frame selection
                echo "Intermediate frames montage saved as ${OUT%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
             4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
