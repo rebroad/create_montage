@@ -82,37 +82,35 @@ AVAILABLE_FRAMES=$(calc_available_frames)
 echo "Total available frames (excluding deadzones): $AVAILABLE_FRAMES"
 
 find_optimal_grid() {
+    local target_rows=$1
+    local target_cols=$2
     echo "Searching for optimal grid for $WIDTH:$HEIGHT aspect ratio"
     MIN_RATIO_DIFF=1000000
     for ((y=1; y<=AVAILABLE_FRAMES; y++)); do
-        x=$(( (AVAILABLE_FRAMES + y - 1) / y ))
-        GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
-        echo "Grid ${x}x${y}, ratio: $GRID_RATIO" | tee -a "$LOG"
-        RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
-        if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
-            MIN_RATIO_DIFF=$RATIO_DIFF
-            COLS=$x
-            ROWS=$y
-            echo "Best grid so far: ${COLS}x${ROWS}"
-        else
-            break
-        fi
+        for ((x=1; x<=AVAILABLE_FRAMES; x++)); do
+            [ -n "$target_rows" ] && [ "$y" -ne "$target_rows" ] && continue
+            [ -n "$target_cols" ] && [ "$x" -ne "$target_cols" ] && continue
+            GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
+            RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
+            if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
+                MIN_RATIO_DIFF=$RATIO_DIFF
+                COLS=$x
+                ROWS=$y
+            fi
+        done
     done
-    echo "Optimal grid for aspect ratio $ASPECT_RATIO: ${COLS}x${ROWS}"
+    echo "Optimal grid: ${COLS}x${ROWS}"
 }
 
 if [ -n "$GRID" ]; then
     if [[ "$GRID" =~ ^x[0-9]+$ ]]; then
-        ROWS=${GRID#x}
-        COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
+        find_optimal_grid ${GRID#x}
     elif [[ "$GRID" =~ ^[0-9]+x$ ]]; then
-        COLS=${GRID%x}
-        ROWS=$(bc <<< "scale=0; ($COLS * $FRAME_WIDTH) / ($TARGET_RATIO * $FRAME_HEIGHT)")
+        find_optimal_grid . ${GRID%x}
     else
         COLS=${GRID%x*}
         ROWS=${GRID#*x}
     fi
-    echo "Using grid: ${COLS}x${ROWS}"
 elif [ -n "$ASPECT_RATIO" ]; then
     find_optimal_grid
 else
@@ -120,7 +118,7 @@ else
     find_optimal_grid 3
 fi
 
-echo "DEBUG: COLS=${COLS} ROWS=${ROWS}"
+echo "Using grid: ${COLS}x${ROWS}"
 TOTAL_IMAGES=$((COLS * ROWS))
 [ "$TOTAL_IMAGES" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
 [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL_IMAGES) than video frames ($TOTAL_FRAMES)."; exit 1; }
@@ -156,7 +154,6 @@ add_deadzone() {
     cat "$DEADZONE_FILE"
 }
 
-# Frame distribution function
 frame_distribution() {
     echo "DEBUG: Entering frame_distribution function"
     livezones=()
@@ -217,6 +214,8 @@ frame_distribution() {
             frame_nums+=($frame)
         done
     done
+
+    echo "Selected frames: ${frame_nums[*]}"
 }
 
 generate_montage() {
@@ -262,13 +261,11 @@ generate_montage() {
 
     echo "Creating montage..." | tee -a "$LOG"
     echo "Filter complex: $FILTER" | tee -a "$LOG"
-    echo "inputs = ${inputs[@]}" | tee -a "$LOG"
 
     # Suppress Fontconfig warnings
     export FONTCONFIG_FILE="/dev/null"
 
     ffmpeg -loglevel error -y "${inputs[@]}" -filter_complex "$FILTER" -map "[v]" "$(convert_path "$output_file")" 2>> "$LOG"
-
     [ $? -eq 0 ] && [ -f "$output_file" ] && echo "Montage saved as $output_file" || { echo "Error: Failed to create montage. See $LOG for details." | tee -a "$LOG"; cat "$LOG"; exit 1; }
 }
 
@@ -278,7 +275,6 @@ if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
 else
     while true; do
-        echo "Current frame distribution: ${frame_nums[*]}"
         echo "1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage"
         echo "4. Show current deadzones  5. Exit"
         read -p "Enter your choice: " choice
@@ -287,7 +283,7 @@ else
                add_deadzone $start $end
                frame_distribution ;;
             2) read -p "Enter start and end frames: " start end
-               generate_montage "${OUT%.*}_intermediate.png" $start $end
+               generate_montage "${OUT%.*}_intermediate.png" $start $end # This no longer works as it needs to ignore deadzones and re-do frame selection
                echo "Intermediate frames montage saved as ${OUT%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
             4) echo "Current deadzones:"; cat "$DEADZONE_FILE" ;;
