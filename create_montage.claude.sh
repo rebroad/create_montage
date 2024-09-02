@@ -119,7 +119,9 @@ elif [ -n "$ASPECT_RATIO" ]; then
     find_optimal_grid
 else
     echo "No grid or aspect ratio specified. Using default 3 row grid."
-    find_optimal_grid 3
+    ROWS=3
+    #COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH + 0.5")
+    COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
 fi
 
 echo "DEBUG: COLS=${COLS} ROWS=${ROWS}"
