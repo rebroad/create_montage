@@ -87,44 +87,38 @@ find_optimal_grid() {
     echo "Searching for optimal grid for $WIDTH:$HEIGHT aspect ratio"
     MIN_RATIO_DIFF=1000000
     for ((y=1; y<=AVAILABLE_FRAMES; y++)); do
-        x=$(( (AVAILABLE_FRAMES + y - 1) / y ))
-        GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
-        echo "Grid ${x}x${y}, ratio: $GRID_RATIO" | tee -a "$LOG"
-        RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
-        if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
-            MIN_RATIO_DIFF=$RATIO_DIFF
-            COLS=$x
-            ROWS=$y
-            echo "Best grid so far: ${COLS}x${ROWS}"
-        else
-            break
-        fi
+        for ((x=1; x<=AVAILABLE_FRAMES; x++)); do
+            [ -n "$target_rows" ] && [ "$y" -ne "$target_rows" ] && continue
+            [ -n "$target_cols" ] && [ "$x" -ne "$target_cols" ] && continue
+            GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
+            RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
+            if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
+                MIN_RATIO_DIFF=$RATIO_DIFF
+                COLS=$x
+                ROWS=$y
+            fi
+        done
     done
     echo "Optimal grid: ${COLS}x${ROWS}"
 }
 
 if [ -n "$GRID" ]; then
     if [[ "$GRID" =~ ^x[0-9]+$ ]]; then
-        ROWS=${GRID#x}
-        COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
+        find_optimal_grid ${GRID#x}
     elif [[ "$GRID" =~ ^[0-9]+x$ ]]; then
-        COLS=${GRID%x}
-        ROWS=$(bc <<< "scale=0; ($COLS * $FRAME_WIDTH) / ($TARGET_RATIO * $FRAME_HEIGHT)")
+        find_optimal_grid . ${GRID%x}
     else
         COLS=${GRID%x*}
         ROWS=${GRID#*x}
     fi
-    echo "Using grid: ${COLS}x${ROWS}"
 elif [ -n "$ASPECT_RATIO" ]; then
     find_optimal_grid
 else
     echo "No grid or aspect ratio specified. Using default 3 row grid."
-    ROWS=3
-    #COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH + 0.5")
-    COLS=$(bc <<< "scale=0; ($ROWS * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
+    find_optimal_grid 3
 fi
 
-echo "DEBUG: COLS=${COLS} ROWS=${ROWS}"
+echo "Using grid: ${COLS}x${ROWS}"
 TOTAL_IMAGES=$((COLS * ROWS))
 [ "$TOTAL_IMAGES" -lt 2 ] && { echo "Error: The grid must allow for at least 2 images."; exit 1; }
 [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL_IMAGES) than video frames ($TOTAL_FRAMES)."; exit 1; }
