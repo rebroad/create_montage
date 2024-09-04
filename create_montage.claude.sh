@@ -161,7 +161,8 @@ distribute_images() {
     # Distribute the images evenly among this frames
     step=$(echo "scale=6; ($end_frame - $start_frame) / ($population - 1)" | bc)
     for ((i=$start_image; i<=$end_image; i++)); do
-        images[$i]=$(echo "scale=0; $start_frame + ($step * $i)" | bc)
+        frame=$(echo "scale=6; $start_frame + ($i * $step)" | bc)
+        images[$i]=$(echo "($frame+0.5)/1" | bc)
     done
     echo "For range start: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
@@ -198,6 +199,10 @@ distribute_images() {
             local dead_end=$temp_dead_end
         fi
     done
+
+    if [ $max_size -eq 0 ]; then
+        return
+    fi
 
     # Find number of images within this deadzone
     dead_images=0
