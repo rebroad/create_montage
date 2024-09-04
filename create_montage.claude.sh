@@ -171,8 +171,9 @@ distribute_images() {
     echo "Distribute_images: $start_frame to $end_frame"
 
     # Distribute the images evenly among this frames
+    step=$(echo "scale=6; ($end_frame - $start_frame) / ($population - 1)" | bc)
     for ((i=$start_image; i<=$end_image; i++)); do
-        images[$i]=$((start_frame + i * (end_frame - start_frame) / population - 1)))
+        images[$i]=$(echo "scale=0; $start_frame + ($step * $i)" | bc)
     done
     echo "For range start: $start_frame to $end_frame\nSelected frames: ${images[*]}"
 
@@ -255,8 +256,8 @@ generate_montage() {
     [ -n "$2" ] && { what="selected range"; }
     [ -n "$3" ] && { what="selected range"; }
     [ -n "$RESIZE" ] && { resizing=" and resizing"; }
-    for i in "${!frame_nums[@]}"; do
-        FRAME_NUM=${frame_nums[$i]}
+    for i in "${!images[@]}"; do
+        FRAME_NUM=${images[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
         PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
         echo "Extracting frame $i ($PERCENT% of $what)$resizing"
