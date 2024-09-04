@@ -124,32 +124,15 @@ TOTAL_IMAGES=$((COLS * ROWS))
 [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL_IMAGES) than video frames ($TOTAL_FRAMES)."; exit 1; }
 
 add_deadzone() {
-    start="$1"
-    end="$2"
-    [ -z "$end" ] && end=$start
-    echo "$start:$end" >> "$DEADZONE_FILE"
-    # Hide the file on Windows after writing
+    echo "$1:$2" >> "$DEADZONE_FILE"
+    sort -n -t: -k1,1 -k2,2 "$DEADZONE_FILE" | awk -F: '
+        BEGIN { OFS=":" }
+        NR==1 { prev_start=$1; prev_end=$2; next }
+        $1 <= prev_end+1 { prev_end = ($2 > prev_end ? $2 : prev_end); next }
+        { print prev_start, prev_end; prev_start=$1; prev_end=$2 }
+        END { print prev_start, prev_end }
+    ' > "${DEADZONE_FILE}.tmp" && mv "${DEADZONE_FILE}.tmp" "$DEADZONE_FILE"
     [[ "$OSTYPE" == "cygwin"* ]] && attrib +h "$(cygpath -w "$DEADZONE_FILE")" >/dev/null 2>&1
-    temp_file="${DEADZONE_FILE}.temp"
-    sort -n -t: -k1,1 "$DEADZONE_FILE" | uniq > "$temp_file"
-    prev_start=""
-    prev_end=""
-    : > "$DEADZONE_FILE"
-    while IFS=':' read start end; do
-        end=$(trim "$end")
-        if [ -z "$prev_start" ]; then
-            prev_start=$start
-            prev_end=$end
-        elif [ $start -le $((prev_end + 1)) ]; then
-            prev_end=$((end > prev_end ? end : prev_end))
-        else
-            echo "${prev_start}:${prev_end}" >> "$DEADZONE_FILE"
-            prev_start=$start
-            prev_end=$end
-        fi
-    done < "$temp_file"
-    [ -n "$prev_start" ] && echo "${prev_start}:${prev_end}" >> "$DEADZONE_FILE"
-    rm "$temp_file"
     echo "Added and merged deadzones. Current deadzones:"
     cat "$DEADZONE_FILE"
 }
