@@ -137,68 +137,99 @@ add_deadzone() {
     cat "$DEADZONE_FILE"
 }
 
-frame_distribution() {
-    echo "DEBUG: Entering frame_distribution function"
-    livezones=()
-    deadzones=()
+deadzones=()
 
-    echo "DEBUG: Reading deadzones"
-    if [ -f "$DEADZONE_FILE" ]; then
-        while IFS=':' read start end; do
-            end=$(trim "$end")
-            deadzones+=("$start:$end")
-            echo "DEBUG: Added deadzone $start:$end"
-        done < "$DEADZONE_FILE"
-    fi
-    
-    echo "DEBUG: Creating livezones"
-    prev_end="-1"
-    prev_deadzone_size=0
-    for zone in "${deadzones[@]}"; do
-        IFS=':' read start end <<< "$zone"
+echo "DEBUG: Reading deadzones"
+if [ -f "$DEADZONE_FILE" ]; then
+    while IFS=':' read start end; do
         end=$(trim "$end")
-        if [ "$start" -gt "$((prev_end + 1))" ]; then
-            next_deadzone_size=$((end - start + 1))
-            livezone="$((prev_end + 1)):$((start - 1)):0:$prev_deadzone_size:$next_deadzone_size"
-            livezones+=("$livezone")
-            echo "DEBUG: Added livezone $livezone"
-        fi
-        prev_end=$end
-        prev_deadzone_size=$next_deadzone_size
+        deadzones+=($start $end)
+        echo "DEBUG: Added deadzone $start:$end"
+    done < "$DEADZONE_FILE"
+fi
+
+distribute_images() {
+    start_frame=${1:-0}
+    local end_frame=${2:-$((TOTAL_FRAMES - 1))}
+    population=${3:-$TOTAL_IMAGES}
+    start_image=${4:-0}
+    local end_image=${5:-$((TOTAL_IMAGES - 1))}
+    ignore_deadzones=$4
+    echo "Distribute_images: $start_frame to $end_frame"
+
+    # Distribute the images evenly among this frames
+    for ((i=$start_image; i<=$end_image; i++)); do
+        images[$i]=$((start_frame + i * (end_frame - start_frame) / population - 1)))
     done
-    if [ "$prev_end" -lt "$((TOTAL_FRAMES - 1))" ]; then
-        livezone="$((prev_end + 1)):$((TOTAL_FRAMES - 1)):0:$prev_deadzone_size:0"
-        livezones+=("$livezone")
-        echo "DEBUG: Added final livezone $livezone"
+    echo "For range start: $start_frame to $end_frame\nSelected frames: ${images[*]}"
+
+    if [ -n "$ignore_deadzones" ]; then
+        echo Ignoring deadzones
+        return
     fi
 
-    echo "DEBUG: Distributing images across livezones"
-    local remaining_frames=$(calc_available_frames)
-    local remaining_images=$TOTAL_IMAGES
-    for ((i=0; i<${#livezones[@]}; i++)); do
-        IFS=':' read start end population prev_deadzone next_deadzone <<< "${livezones[$i]}"
-        zone_space=$((end - start + 1))
-        zone_images=$((remaining_images * zone_space / remaining_frames))
-        livezones[$i]="$start:$end:$zone_images:$prev_deadzone:$next_deadzone"
-        echo "DEBUG: Updated livezone $i: ${livezones[$i]}"
-        remaining_images=$((remaining_images - zone_images))
-        remaining_frames=$((remaining_frames - zone_space))
+    abs() {
+        if (( $1 < 0 )); then
+            echo $(( -1 * $1 ))
+        else
+            echo $1
+        fi
+    }
+
+    # Find the largest deadzone (or nearest the center) within the frames for this run
+    max_size=0
+    closest_to_center
+    center=$(( (start_frame + end_frame) / 2))
+    for ((i=0; i<${#deadzones[@]}; i+=2)); do
+        temp_dead_start=${deadzones[i]}
+        temp_dead_end=${deadzones[i+1]}
+        if (( temp_dead_end < start_frame || temp_dead_start > end_frame )); then
+            continue
+        fi
+        size=$((temp_dead_end - temp_dead_start + 1))
+        midpoint=$(( (temp_dead_start + temp_dead_end) / 2))
+        if (( size > max_size || (size == max_size && abs(midpoint-center) < abs(closest_to_center-center)) )); then
+            max_size=$size
+            closest_to_center=$midpoint
+            dead_start=$temp_dead_start
+            local dead_end=$temp_dead_end
+        fi
     done
 
-    echo "DEBUG: Selecting frames for each livezone"
-    frame_nums=()
-    for zone in "${livezones[@]}"; do
-        IFS=':' read start end population prev_deadzone next_deadzone <<< "$zone"
-        range=$((end - start))
-        step=$(bc -l <<< "scale=10; $range / ($population - 1)") # Risk of divide by 0
-        echo "DEBUG: Zone $start:$end, population: $population, step: $step"
-        for ((i=0; i<population; i++)); do
-            frame=$(printf "%.0f" $(bc -l <<< "$start + ($i * $step)"))
-            frame_nums+=($frame)
-        done
+    # Find number of images within this deadzone
+    dead_images=0
+    to_the_left=0
+    local to_the_right=0
+    echo "Processing deadzone: $dead_start:$dead_end"
+    for ((i=$start_image; i<=$end_image; i++)); do
+        if [[ ${images[$i]} -lt $dead_start ]]; then
+            to_the_left=$((to_the_left + 1))
+            left_end_image=$i
+        elif [[ ${images[$i]} -ge $dead_start && ${images[$i]} -le $dead_end ]]; then
+            dead_images=$((dead_images + 1))
+            right_start_image=$(i + 1)
+        elif [[ ${images[$i]} -gt $dead_end ];; then
+            to_the_right=$((to_the_right + 1))
+        fi
     done
 
-    echo "Selected frames: ${frame_nums[*]}"
+    calculate_density() {
+        echo "scale=6; $3 / ($2 / $1 + 1)" | bc
+    }
+
+    left_density=$(calculate_density $start_frame $((dead_start - 1)) $to_the_left)
+    right_density=$(calculate_density $((dead_end + 1)) $end_frame $to_the_right)
+    move_left=$(echo "scale=0; $dead_images * $right_density / ($left_density) / 1" | bc)
+    local move_right=$((dead_images - move_left))
+
+    # Recursive into either livezone
+    if [[ ${move_left} -gt 0 ]; then
+        distribute_images $start_frame $((dead_start - 1)) $((to_the_left + move_left)) $start_image $left_end_image
+    fi
+    if [[ ${move_right} -gt 0 ]; then
+        distribute_images $((dead_end + 1)) $end_frame $((to_the_right + move_right)) $right_start_image $end_image
+    fi
+    echo "For range final: $start_frame to $end_frame\nSelected frames: ${images[*]}"
 }
 
 generate_montage() {
@@ -253,7 +284,7 @@ generate_montage() {
 }
 
 # Main execution
-frame_distribution
+distribute_images
 if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
 else
@@ -264,8 +295,9 @@ else
         case $choice in
             1) read -p "Enter start and end frames: " start end
                add_deadzone $start $end
-               frame_distribution ;;
+               distribute_images ;;
             2) read -p "Enter start and end frames: " start end
+               distribute_images $start $end $TOTAL_IMAGES 0 0 1
                generate_montage "${OUT%.*}_intermediate.png" $start $end # This no longer works as it needs to ignore deadzones and re-do frame selection
                echo "Intermediate frames montage saved as ${OUT%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
