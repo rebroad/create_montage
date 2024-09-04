@@ -222,7 +222,7 @@ distribute_images() {
         elif [[ ${images[$i]} -ge $dead_start && ${images[$i]} -le $dead_end ]]; then
             dead_images=$((dead_images + 1))
             right_start_image=$(i + 1)
-        elif [[ ${images[$i]} -gt $dead_end ];; then
+        elif [[ ${images[$i]} -gt $dead_end ]]; then
             to_the_right=$((to_the_right + 1))
         fi
     done
@@ -237,10 +237,10 @@ distribute_images() {
     local move_right=$((dead_images - move_left))
 
     # Recursive into either livezone
-    if [[ ${move_left} -gt 0 ]; then
+    if [[ ${move_left} -gt 0 ]]; then
         distribute_images $start_frame $((dead_start - 1)) $((to_the_left + move_left)) $start_image $left_end_image
     fi
-    if [[ ${move_right} -gt 0 ]; then
+    if [[ ${move_right} -gt 0 ]]; then
         distribute_images $((dead_end + 1)) $end_frame $((to_the_right + move_right)) $right_start_image $end_image
     fi
     echo "For range final: $start_frame to $end_frame\nSelected frames: ${images[*]}"
