@@ -68,17 +68,16 @@ fi
 TARGET_RATIO=$(bc -l <<< "scale=10; $WIDTH/$HEIGHT")
 echo "Target aspect ratio: $WIDTH:$HEIGHT ($TARGET_RATIO)"
 
-calc_available_frames() {
-    local num=$TOTAL_FRAMES
-    if [ -f "$DEADZONE_FILE" ]; then
-        while IFS=':' read start end; do
-            end=$(trim "$end")
-            num=$((num - (end - start + 1)))
-        done < "$DEADZONE_FILE"
-    fi
-    echo "$num"
-}
-AVAILABLE_FRAMES=$(calc_available_frames)
+AVAILABLE_FRAMES=$TOTAL_FRAMES
+deadzones=()
+if [ -f "$DEADZONE_FILE" ]; then
+    while IFS=':' read start end; do
+        end=$(trim "$end")
+        AVAILABLE_FRAMES=$((AVAILABLE_FRAMES - (end - start + 1)))
+        deadzones+=("$start" "$end")
+        echo "DEBUG: Added deadzone $start:$end"
+    done < "$DEADZONE_FILE"
+fi
 echo "Total available frames (excluding deadzones): $AVAILABLE_FRAMES"
 
 find_optimal_grid() {
@@ -150,17 +149,6 @@ add_deadzone() {
     cat "$DEADZONE_FILE"
 }
 
-deadzones=()
-
-echo "DEBUG: Reading deadzones"
-if [ -f "$DEADZONE_FILE" ]; then
-    while IFS=':' read start end; do
-        end=$(trim "$end")
-        deadzones+=($start $end)
-        echo "DEBUG: Added deadzone $start:$end"
-    done < "$DEADZONE_FILE"
-fi
-
 distribute_images() {
     start_frame=${1:-0}
     local end_frame=${2:-$((TOTAL_FRAMES - 1))}
@@ -175,7 +163,8 @@ distribute_images() {
     for ((i=$start_image; i<=$end_image; i++)); do
         images[$i]=$(echo "scale=0; $start_frame + ($step * $i)" | bc)
     done
-    echo "For range start: $start_frame to $end_frame\nSelected frames: ${images[*]}"
+    echo "For range start: $start_frame to $end_frame"
+    echo "Selected frames: ${images[*]}"
 
     if [ -n "$ignore_deadzones" ]; then
         echo Ignoring deadzones
@@ -192,7 +181,7 @@ distribute_images() {
 
     # Find the largest deadzone (or nearest the center) within the frames for this run
     max_size=0
-    closest_to_center
+    closest_to_center=0
     center=$(( (start_frame + end_frame) / 2))
     for ((i=0; i<${#deadzones[@]}; i+=2)); do
         temp_dead_start=${deadzones[i]}
