@@ -87,18 +87,29 @@ find_optimal_grid() {
     echo "Searching for optimal grid for $WIDTH:$HEIGHT aspect ratio"
     # TODO - this can be optimized to skip most of the configs
     MIN_RATIO_DIFF=1000000
-    start_y=1; start_x=1; end_y=$AVAILABLE_FRAMES; end_x=$AVAILABLE_FRAMES
+    start_y=1; end_y=$AVAILABLE_FRAMES; end_x=$AVAILABLE_FRAMES
     [ -n "$target_rows" ] && start_y=$target_rows && end_y=$target_rows
-    [ -n "$target_cols" ] && start_x=$target_cols && end_x=$target_cols
     for ((y=start_y; y<=end_y; y++)); do
+        LAST_X_DIFF=1000000
+        start_x=$(bc <<< "scale=0; ($y * $TARGET_RATIO * $FRAME_HEIGHT) / $FRAME_WIDTH")
+        if [ $((start_x * y)) -gt $AVAILABLE_FRAMES ]; then
+            break
+        fi
+        [ -n "$target_cols" ] && start_x=$target_cols && end_x=$target_cols
         for ((x=start_x; x<=end_x; x++)); do
-            GRID_RATIO=$(bc -l <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
-            RATIO_DIFF=$(bc -l <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
-            if (( $(bc -l <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
+            GRID_RATIO=$(bc <<< "scale=10; ($x * $FRAME_WIDTH) / ($y * $FRAME_HEIGHT)")
+            RATIO_DIFF=$(bc <<< "scale=10; ($GRID_RATIO - $TARGET_RATIO)^2")
+            if (( $(bc <<< "$RATIO_DIFF < $MIN_RATIO_DIFF") )); then
                 MIN_RATIO_DIFF=$RATIO_DIFF
                 COLS=$x
                 ROWS=$y
+                echo -n "BEST! "
+            elif (( $(bc <<< "$LAST_X_DIFF < $RATIO_DIFF") )); then
+                echo "x=$x y=$y RATIO_DIFF=$RATIO_DIFF - XBreak"
+                break
             fi
+            LAST_X_DIFF=$RATIO_DIFF
+            echo x=$x y=$y RATIO_DIFF=$RATIO_DIFF
         done
     done
     echo "Optimal grid: ${COLS}x${ROWS}"
