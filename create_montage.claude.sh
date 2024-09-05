@@ -151,12 +151,16 @@ add_deadzone() {
 
 distribute_images() {
     start_frame=${1:-0}
+    if [ $start_frame -eq -1 ]; then
+        start_frame=0
+        ignore_deadzones=1
+    fi
     local end_frame=${2:-$((TOTAL_FRAMES - 1))}
-    population=${3:-$TOTAL_IMAGES}
-    start_image=${4:-0}
-    local end_image=${5:-$((TOTAL_IMAGES - 1))}
-    ignore_deadzones=$4
-    echo "Distribute_images: $start_frame to $end_frame"
+    start_image=${3:-0}
+    local end_image=${4:-$((TOTAL_IMAGES - 1))}
+    ignore_deadzones=$5
+    population=$((end_image - start_image + 1))
+    echo "Distribute_images: frames=$start_frame-$end_frame images=$start_image-$end_image pop=$population"
 
     # Distribute the images evenly among this frames
     step=$(echo "scale=6; ($end_frame - $start_frame) / ($population - 1)" | bc)
@@ -169,7 +173,7 @@ distribute_images() {
     echo "For range start: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
 
-    if [ "$ignore_deadzones" -eq 1 ]; then
+    if [ "$ignore_deadzones" != "" ]; then
         echo Ignoring deadzones = ".$ignore_deadzones."
         return
     fi
@@ -239,10 +243,12 @@ distribute_images() {
 
     # Recursive into either livezone
     if [[ ${move_left} -gt 0 ]]; then
-        distribute_images $start_frame $((dead_start - 1)) $((to_the_left + move_left)) $start_image $left_end_image
+        echo Dist_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
+        distribute_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
     fi
     if [[ ${move_right} -gt 0 ]]; then
-        distribute_images $((dead_end + 1)) $end_frame $((to_the_right + move_right)) $right_start_image $end_image
+        echo Dist_images $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
+        distribute_images $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
     fi
     echo "For range final: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
@@ -313,7 +319,7 @@ else
                add_deadzone $start $end
                distribute_images ;;
             2) read -p "Enter start and end frames: " start end
-               distribute_images $start $end $TOTAL_IMAGES 0 0 1
+               distribute_images -1
                generate_montage "${OUT%.*}_intermediate.png" $start $end # This no longer works as it needs to ignore deadzones and re-do frame selection
                echo "Intermediate frames montage saved as ${OUT%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
