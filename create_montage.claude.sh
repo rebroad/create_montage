@@ -154,14 +154,6 @@ add_deadzone() {
     load_deadzones
 }
 
-abs() {
-    if (( $1 < 0 )); then
-        echo $(( -1 * $1 ))
-    else
-        echo $1
-    fi
-}
-
 dist_images() {
     local start_frame=${1:-0}
     if [ $start_frame -eq -1 ]; then
@@ -217,17 +209,24 @@ dist_images() {
     max_size=0
     closest_to_center=0
     center=$(( (start_frame + end_frame) / 2))
-    echo Finding largest deadzone within frames $start_frame to $end_frame
+
+    if (( start_frame <= end_frame )); then
+        frame_min=$start_frame; frame_max=$end_frame
+    else
+        frame_min=$end_frame; frame_max=$start_frame
+    fi
+
+    echo Finding largest deadzone within frames $frame_min to $frame_max
     for ((i=0; i<${#deadzones[@]}; i+=2)); do
         temp_dead_start=${deadzones[i]}
         temp_dead_end=${deadzones[i+1]}
         #echo temp_dead_start=$temp_dead_start temp_dead_end=$temp_dead_end
-        if (( temp_dead_end < start_frame || temp_dead_start > end_frame )); then
+        if (( temp_dead_end < frame_min || temp_dead_start > frame_max )); then
             continue
         fi
         size=$((temp_dead_end - temp_dead_start + 1))
         midpoint=$(( (temp_dead_start + temp_dead_end) / 2))
-        if (( size > max_size )) || (( size == max_size && $(abs $((midpoint-center))) < $(abs $((closest_to_center-center))) )); then
+        if (( size > max_size )) || (( size == max_size && ${midpoint-center#-} < ${closest_to_center-center#-} )); then
             max_size=$size
             closest_to_center=$midpoint
             dead_start=$temp_dead_start
@@ -408,6 +407,7 @@ else
         case $choice in
             1) read -p "Enter start and end frames: " start end
                add_deadzone $start $end
+               image=()
                dist_images ;;
             2) read -p "Enter start and end frames: " start end
                dist_images -1
