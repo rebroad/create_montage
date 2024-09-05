@@ -218,18 +218,19 @@ distribute_images() {
             left_end_image=$i
         elif [[ ${images[$i]} -ge $dead_start && ${images[$i]} -le $dead_end ]]; then
             dead_images=$((dead_images + 1))
-            right_start_image=$(i + 1)
+            right_start_image=$((i + 1))
         elif [[ ${images[$i]} -gt $dead_end ]]; then
             to_the_right=$((to_the_right + 1))
         fi
     done
+    echo left_end_image=$left_end_image dead_images=$dead_images to_left=$to_the_left to_right=$to_the_right
 
-    calculate_density() {
-        echo "scale=6; $3 / ($2 / $1 + 1)" | bc
-    }
-
-    left_density=$(calculate_density $start_frame $((dead_start - 1)) $to_the_left)
-    right_density=$(calculate_density $((dead_end + 1)) $end_frame $to_the_right)
+    echo "calculate left density = $to_the_left / $((dead_start - start_frame))"
+    left_density=$(echo "scale=6; $to_the_left / ($dead_start - $start_frame)" | bc)
+    echo left_density=$left_density
+    echo "calculate right density = $to_the_right / $((end_frame - dead_end))"
+    right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end)" | bc)
+    echo right_density=$right_density
     move_left=$(echo "scale=0; $dead_images * $right_density / ($left_density) / 1" | bc)
     local move_right=$((dead_images - move_left))
 
@@ -240,7 +241,8 @@ distribute_images() {
     if [[ ${move_right} -gt 0 ]]; then
         distribute_images $((dead_end + 1)) $end_frame $((to_the_right + move_right)) $right_start_image $end_image
     fi
-    echo "For range final: $start_frame to $end_frame\nSelected frames: ${images[*]}"
+    echo "For range final: $start_frame to $end_frame"
+    echo "Selected frames: ${images[*]}"
 }
 
 generate_montage() {
