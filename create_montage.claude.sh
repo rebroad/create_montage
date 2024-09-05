@@ -160,15 +160,17 @@ distribute_images() {
 
     # Distribute the images evenly among this frames
     step=$(echo "scale=6; ($end_frame - $start_frame) / ($population - 1)" | bc)
+    echo Distribute images "$start_image"-"$end_image" between frames "$start_frame"-"$end_frame" step=$step
     for ((i=$start_image; i<=$end_image; i++)); do
         frame=$(echo "scale=6; $start_frame + ($i * $step)" | bc)
         images[$i]=$(echo "($frame+0.5)/1" | bc)
+        echo image=$i frame=$frame position=${images[$i]}
     done
     echo "For range start: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
 
-    if [ -n "$ignore_deadzones" ]; then
-        echo Ignoring deadzones
+    if [ "$ignore_deadzones" -eq 1 ]; then
+        echo Ignoring deadzones = ".$ignore_deadzones."
         return
     fi
 
@@ -233,6 +235,7 @@ distribute_images() {
     echo right_density=$right_density
     move_left=$(echo "scale=0; $dead_images * $right_density / ($left_density) / 1" | bc)
     local move_right=$((dead_images - move_left))
+    echo dead_images=$dead_images move_left=$move_left move_right=$move_right
 
     # Recursive into either livezone
     if [[ ${move_left} -gt 0 ]]; then
