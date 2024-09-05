@@ -316,14 +316,14 @@ dist_images() {
         # needs to be closer to the deadzone.
         if [ $erm -lt $((dead_end + 1)) ]; then
             if [ $erm -eq 0 ]; then
-                echo "After left dist_images (frames $min_frame to $((dead_start - 1))) out of $min_frame to $max_frame. step=$step
+                echo "After left dist_images (frames $min_frame to $((dead_start - 1))) out of $min_frame to $max_frame. step=$step"
             fi
             erm=$((dead_end + 1))
         fi
         echo Right dist_images $erm $max_frame $((right_start_image - move_right)) $max_image
         dist_images $erm $max_frame $((right_start_image - move_right)) $max_image
         if [ $move_left -eq 0 ] && [ $to_the_left -gt 0 ]; then
-            echo After right dist_images (frames $erm to $max_frame) out of $min_frame to $max_frame. step=$step
+            echo "After right dist_images (frames $erm to $max_frame) out of $min_frame to $max_frame. step=$step"
             erm=$(echo "($dead_end + 1 - $step + 0.5)/1" | bc)
             echo Left dist_images min_frame=$min_frame erm=$erm min_image=$min_image left_end_image=$left_end_image move_left=$move_left
             dist_images $erm $min_frame $((left_end_image + move_left)) $min_image
