@@ -149,7 +149,7 @@ add_deadzone() {
     cat "$DEADZONE_FILE"
 }
 
-distribute_images() {
+image_distribute() {
     start_frame=${1:-0}
     if [ $start_frame -eq -1 ]; then
         start_frame=0
@@ -244,11 +244,11 @@ distribute_images() {
     # Recursive into either livezone
     if [[ ${move_left} -gt 0 ]]; then
         echo Dist_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
-        distribute_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
+        image_distribute $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
     fi
     if [[ ${move_right} -gt 0 ]]; then
         echo Dist_images $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
-        distribute_images $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
+        image_distribute $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
     fi
     echo "For range final: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
@@ -306,7 +306,7 @@ generate_montage() {
 }
 
 # Main execution
-distribute_images
+image_distribute
 if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
 else
@@ -317,9 +317,9 @@ else
         case $choice in
             1) read -p "Enter start and end frames: " start end
                add_deadzone $start $end
-               distribute_images ;;
+               image_distribute ;;
             2) read -p "Enter start and end frames: " start end
-               distribute_images -1
+               image_distribute -1
                generate_montage "${OUT%.*}_intermediate.png" $start $end # This no longer works as it needs to ignore deadzones and re-do frame selection
                echo "Intermediate frames montage saved as ${OUT%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
