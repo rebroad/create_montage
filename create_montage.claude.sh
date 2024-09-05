@@ -245,10 +245,14 @@ image_distribute() {
     if [[ ${move_left} -gt 0 ]]; then
         echo Dist_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
         image_distribute $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
+    else
+        # TODO - we also need to stretch this side towards the shrunk right
     fi
     if [[ ${move_right} -gt 0 ]]; then
         echo Dist_images $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
         image_distribute $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
+    else
+        # TODO - we also need to stretch this side towards the shrunk left
     fi
     echo "For range final: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
