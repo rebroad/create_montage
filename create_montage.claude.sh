@@ -192,13 +192,12 @@ dist_images() {
     # Distribute the images evenly among this frames
     for ((i=start_image; i!=end_image+direction; i+=direction)); do
         frame=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
-        echo frame=$frame image[$i]=${image[$i]}
+        echo image=$i frame: ${image[$i]} -> $frame
         if [ -n "${image[$i]}" ] && [ $frame -eq "${image[$i]}" ]; then
             echo Breaking out of even distribution as image[$i] is already frame $frame
             break
         fi
         image[$i]=$frame
-        #echo image[$i]=${image[$i]}
     done
     echo "Selected frames: ${image[*]}"
 
@@ -234,7 +233,7 @@ dist_images() {
             closest_to_center=$midpoint
             dead_start=$temp_dead_start
             dead_end=$temp_dead_end
-            echo best deadzone found so far: $dead_start:$dead_end
+            #echo best deadzone found so far: $dead_start:$dead_end
         fi
     done
 
@@ -261,28 +260,27 @@ dist_images() {
             to_the_right=$((to_the_right + 1))
         fi
     done
-    echo left_end_image=$left_end_image dead_images=$dead_images to_left=$to_the_left to_right=$to_the_right
+    echo dead_images=$dead_images images_on_left=$to_the_left images_on_right=$to_the_right
     if [ $dead_images -eq 0 ]; then
         return
     fi
 
-    echo "left space frames = $min_frame to $dead_start"
-    echo "right space frames = $dead_end to $max_frame"
-    left_space=$((dead_start - min_frame))
-    right_space=$((max_frame - dead_end))
+    echo "livezones: left: $min_frame:$((dead_start - 1)) right: $((dead_end + 1)):$max_frame"
+    spaces_left=$((dead_start - min_frame))
+    spaces_right=$((max_frame - dead_end))
     best_diff=999999
     best_move_left=0
     local move_left=0
     local move_right=0
 
-    if [ $left_space -gt 0 ] && [ $right_space -gt 0 ]; then
+    if [ $spaces_left -gt 0 ] && [ $spaces_right -gt 0 ]; then
         for move_left in $(seq 0 $dead_images); do
             move_right=$((dead_images - move_left))
-            echo "calculate left density = ($to_the_left + $move_left) / $left_space"
-            left_density=$(echo "scale=6; ($to_the_left + $move_left) / $left_space" | bc)
+            echo "calculate left density = ($to_the_left + $move_left) / $spaces_left"
+            left_density=$(echo "scale=6; ($to_the_left + $move_left) / $spaces_left" | bc)
             echo left_density=$left_density
-            echo "calculate right density = ($to_the_right + $move_right) / $right_space"
-            right_density=$(echo "scale=6; ($to_the_right + $move_right) / $right_space" | bc)
+            echo "calculate right density = ($to_the_right + $move_right) / $spaces_right"
+            right_density=$(echo "scale=6; ($to_the_right + $move_right) / $spaces_right" | bc)
             echo right_density=$right_density
             diff=$(echo "scale=10; ($left_density - $right_density)^2" | bc)
             if (( $(echo "$diff < $best_diff" | bc) )); then
@@ -294,12 +292,12 @@ dist_images() {
         move_left=$best_move_left
         move_right=$((dead_images - move_left))
 
-    elif [ $left_space -gt 0 ]; then
+    elif [ $spaces_left -gt 0 ]; then
         move_left=$dead_images
-    elif [ $right_space -gt 0 ]; then
+    elif [ $spaces_right -gt 0 ]; then
         move_right=$dead_images
     else
-        echo No adjacent spaces to move deadzone - need more algorithm!
+        echo No adjacent spaces to move dead images to - need more algorithm!
         exit
     fi
         
