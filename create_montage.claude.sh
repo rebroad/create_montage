@@ -168,9 +168,8 @@ image_distribute() {
     for ((i=$start_image; i<=$end_image; i++)); do
         frame=$(echo "scale=6; $start_frame + ($i * $step)" | bc)
         images[$i]=$(echo "($frame+0.5)/1" | bc)
-        echo image=$i frame=$frame position=${images[$i]}
+        #echo image=$i frame=$frame position=${images[$i]}
     done
-    echo "For range start: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
 
     if [ "$ignore_deadzones" != "" ]; then
@@ -194,7 +193,7 @@ image_distribute() {
     for ((i=0; i<${#deadzones[@]}; i+=2)); do
         temp_dead_start=${deadzones[i]}
         temp_dead_end=${deadzones[i+1]}
-        echo temp_dead_start=$temp_dead_start temp_dead_end=$temp_dead_end
+        #echo temp_dead_start=$temp_dead_start temp_dead_end=$temp_dead_end
         if (( temp_dead_end < start_frame || temp_dead_start > end_frame )); then
             continue
         fi
@@ -210,6 +209,7 @@ image_distribute() {
     done
 
     if [ $max_size -eq 0 ]; then
+        echo No deadzones within frames $start_frame to $end_frame
         return
     fi
 
@@ -241,17 +241,21 @@ image_distribute() {
     local move_right=$((dead_images - move_left))
     echo dead_images=$dead_images move_left=$move_left move_right=$move_right
 
-    # Recursive into either livezone
-    if [[ ${move_left} -gt 0 ]]; then
+    # Recurse into new livezones
+    step=0
+    if [ $move_left -gt 0 ]; then
         echo Dist_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
         image_distribute $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
-    else
-        # TODO - we also need to stretch this side towards the shrunk right
     fi
-    if [[ ${move_right} -gt 0 ]]; then
+    if [ $move_right -gt 0 ]; then
         echo Dist_images $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
         image_distribute $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
+        if [ $move_left -eq 0 ]; then
+            echo After image_dist right. step=$step frame=$frame
+            # TODO - we also need to stretch this side towards the shrunk right
+        fi
     else
+        echo After image_dist left. step=$step frame=$frame
         # TODO - we also need to stretch this side towards the shrunk left
     fi
     echo "For range final: $start_frame to $end_frame"
