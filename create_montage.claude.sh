@@ -136,7 +136,7 @@ TOTAL_IMAGES=$((COLS * ROWS))
 [ "$TOTAL_IMAGES" -gt "$TOTAL_FRAMES" ] && { echo "Error: Grid (${COLS}x${ROWS}) requires more images ($TOTAL_IMAGES) than video frames ($TOTAL_FRAMES)."; exit 1; }
 
 add_deadzone() {
-    echo "$1:$2" >> "$DEADZONE_FILE"
+    echo "$1:${2:-$1}" >> "$DEADZONE_FILE"
     sort -n -t: -k1,1 -k2,2 "$DEADZONE_FILE" | awk -F: '
         BEGIN { OFS=":" }
         NR==1 { prev_start=$1; prev_end=$2; next }
