@@ -166,9 +166,8 @@ image_distribute() {
     step=$(echo "scale=6; ($end_frame - $start_frame) / ($population - 1)" | bc)
     echo Distribute images "$start_image"-"$end_image" between frames "$start_frame"-"$end_frame" step=$step
     for ((i=$start_image; i<=$end_image; i++)); do
-        frame=$(echo "scale=6; $start_frame + (($i - $start_image) * $step)" | bc)
-        images[$i]=$(echo "($frame+0.5)/1" | bc)
-        echo image=$i frame=$frame position=${images[$i]}
+        images[$i]=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
+        #echo images[$i]=${images[$i]}
     done
     echo "Selected frames: ${images[*]}"
 
