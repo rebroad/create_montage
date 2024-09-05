@@ -154,7 +154,15 @@ add_deadzone() {
     load_deadzones
 }
 
-image_distribute() {
+abs() {
+    if (( $1 < 0 )); then
+        echo $(( -1 * $1 ))
+    else
+        echo $1
+    fi
+}
+
+dist_images() {
     local start_frame=${1:-0}
     if [ $start_frame -eq -1 ]; then
         start_frame=0
@@ -163,15 +171,24 @@ image_distribute() {
     local end_frame=${2:-$((TOTAL_FRAMES - 1))}
     local start_image=${3:-0}
     local end_image=${4:-$((TOTAL_IMAGES - 1))}
-    ignore_deadzones=$5
-    population=$((end_image - start_image + 1))
-    echo "Distribute_images: frames=$start_frame-$end_frame images=$start_image-$end_image pop=$population"
+    if [ $end_image -lt $start_image ]; then
+        direction=-1
+    else
+        direction=1
+    fi
+    echo "Distribute_images: frames=$start_frame-$end_frame images=$start_image-$end_image"
 
     # Distribute the images evenly among this frames
-    step=$(echo "scale=6; ($end_frame - $start_frame) / ($population - 1)" | bc)
+    step=$(echo "scale=6; ($end_frame - $start_frame) / ($end_image - $start_image)" | bc)
     echo Distribute images "$start_image"-"$end_image" between frames "$start_frame"-"$end_frame" step=$step
-    for ((i=$start_image; i<=$end_image; i++)); do
-        images[$i]=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
+    for ((i=start_image; i!=end_image+direction; i+=direction)); do
+        frame=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
+        echo frame=$frame images[$i]=${images[$i]}
+        if [ -n "${images[$i]}" ] && [ $frame -eq "${images[$i]}" ]; then
+            echo Breaking out of even distribution as image[$i] is already frame $frame
+            break
+        fi
+        images[$i]=$frame
         #echo images[$i]=${images[$i]}
     done
     echo "Selected frames: ${images[*]}"
@@ -180,14 +197,6 @@ image_distribute() {
         echo Ignoring deadzones = ".$ignore_deadzones."
         return
     fi
-
-    abs() {
-        if (( $1 < 0 )); then
-            echo $(( -1 * $1 ))
-        else
-            echo $1
-        fi
-    }
 
     # Find the largest deadzone (or nearest the center) within the frames for this run
     max_size=0
@@ -293,24 +302,29 @@ image_distribute() {
     # Recurse into new livezones
     local erm=0
     if [ $move_left -gt 0 ]; then
-        echo Dist_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
-        image_distribute $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
+        echo Left dist_images $((dead_start - 1)) $start_frame $((left_end_image + move_left)) $start_image
+        dist_images $((dead_start - 1)) $start_frame $((left_end_image + move_left)) $start_image
         erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
     fi
-    if [ $move_right -gt 0 ] || [ $erm -gt $dead_end ] && [ $to_the_right -gt 0 ]; then
-        if [ $erm -eq 0 ]; then
+    if [ $to_the_right -gt 0 ]; then
+        # TODO - we also need to enter here even if erm is less than dead_end if the first frame on the right
+        # needs to be closer to the deadzone.
+        if [ $erm -lt $((dead_end + 1)) ]; then
+            if [ $erm -eq 0 ]; then
+                echo After image-dist left. step=$step
+            fi
             erm=$((dead_end + 1))
-        else
-            echo After image-dist left. step=$step
         fi
-        echo Dist_images $erm $end_frame $((right_start_image - move_right)) $end_image
-        image_distribute $erm $end_frame $((right_start_image - move_right)) $end_image
+        echo Right dist_images $erm $end_frame $((right_start_image - move_right)) $end_image
+        dist_images $erm $end_frame $((right_start_image - move_right)) $end_image
         if [ $move_left -eq 0 ] && [ $to_the_left -gt 0 ]; then
-            echo After image_dist right. step=$step
+            echo After dist_images right. step=$step
             erm=$(echo "($dead_end + 1 - $step + 0.5)/1" | bc)
-            echo Dist_images start_frame=$start_frame erm=$erm start_image=$start_image left_end_image=$left_end_image move_left=$move_left
-            image_distribute $start_frame $erm $start_image $((left_end_image + move_left))
+            echo Left dist_images start_frame=$start_frame erm=$erm start_image=$start_image left_end_image=$left_end_image move_left=$move_left
+            dist_images $erm $start_frame $((left_end_image + move_left)) $start_image
         fi
+    else
+        echo Apparently no need to call right dist_images. erm=$erm dead_end=$dead_end to_right=$to_the_right
     fi
     echo "For range final: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
@@ -368,7 +382,7 @@ generate_montage() {
 }
 
 # Main execution
-image_distribute
+dist_images
 if [ "$INTERACTIVE_MODE" = false ]; then
     generate_montage "$OUT"
 else
@@ -379,9 +393,9 @@ else
         case $choice in
             1) read -p "Enter start and end frames: " start end
                add_deadzone $start $end
-               image_distribute ;;
+               dist_images ;;
             2) read -p "Enter start and end frames: " start end
-               image_distribute -1
+               dist_images -1
                generate_montage "${OUT%.*}_intermediate.png" $start $end # This no longer works as it needs to ignore deadzones and re-do frame selection
                echo "Intermediate frames montage saved as ${OUT%.*}_intermediate.png" ;;
             3) generate_montage "$OUT" ;;
