@@ -322,8 +322,8 @@ dist_images() {
             fi
             erm=$((dead_end + 1))
         fi
-        echo "Right dist_images $erm $max_frame ($right_start_image - $move_right) $max_image (within $min_frame to $max_frame run)"
-        dist_images $erm $max_frame $((right_start_image - move_right)) $max_image
+        echo "Right dist_images: frames: $erm to $max_frame images: $right_start_image+$move_right to $max_image (within $min_frame to $max_frame run)"
+        dist_images $erm $max_frame $((right_start_image + move_right)) $max_image
         if [ $move_left -eq 0 ] && [ $to_the_left -gt 0 ]; then
             echo "After right dist_images (frames $erm to $max_frame) out of $min_frame to $max_frame. step=$step"
             erm=$(echo "($dead_end + 1 - $step + 0.5)/1" | bc)
