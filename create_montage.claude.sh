@@ -214,6 +214,8 @@ dist_images() {
 
     local min_frame=$(( start_frame < end_frame ? start_frame : end_frame ))
     local max_frame=$(( start_frame < end_frame ? end_frame : start_frame ))
+    local dead_start
+    local dead_end
 
     echo Finding largest deadzone within frames $min_frame to $max_frame
     for ((i=0; i<${#deadzones[@]}; i+=2)); do
@@ -231,7 +233,7 @@ dist_images() {
             max_size=$size
             closest_to_center=$midpoint
             dead_start=$temp_dead_start
-            local dead_end=$temp_dead_end
+            dead_end=$temp_dead_end
             echo best deadzone found so far: $dead_start:$dead_end
         fi
     done
@@ -245,17 +247,16 @@ dist_images() {
     dead_images=0
     local to_the_left=0
     local to_the_right=0
-    local left_end_image
     echo "Processing deadzone: $dead_start:$dead_end"
     local min_image=$(( start_image < end_image ? start_image : end_image ))
     local max_image=$(( start_image < end_image ? end_image : start_image ))
     for ((i=min_image; i<=max_image; i++)); do
         if [[ ${image[$i]} -lt $dead_start ]]; then
             to_the_left=$((to_the_left + 1))
-            left_end_image=$i
+            local left_end_image=$i
         elif [[ ${image[$i]} -ge $dead_start && ${image[$i]} -le $dead_end ]]; then
             dead_images=$((dead_images + 1))
-            right_start_image=$((i + 1))
+            local right_start_image=$((i + 1))
         elif [[ ${image[$i]} -gt $dead_end ]]; then
             to_the_right=$((to_the_right + 1))
         fi
@@ -323,11 +324,14 @@ dist_images() {
             fi
             erm=$((dead_end + 1))
         fi
-        echo "Right dist_images $erm $max_frame $((right_start_image - move_right)) $max_image (within $min_frame to $((dead_start - 1)) run)"
+        echo "Right dist_images $erm $max_frame ($right_start_image - $move_right) $max_image (within $min_frame to $max_frame run)"
         dist_images $erm $max_frame $((right_start_image - move_right)) $max_image
         if [ $move_left -eq 0 ] && [ $to_the_left -gt 0 ]; then
             echo "After right dist_images (frames $erm to $max_frame) out of $min_frame to $max_frame. step=$step"
             erm=$(echo "($dead_end + 1 - $step + 0.5)/1" | bc)
+            if [ $erm -gt $((dead_start - 1)) ]; then
+                erm=$((dead_start - 1))
+            fi
             echo Left dist_images min_frame=$min_frame erm=$erm min_image=$min_image left_end_image=$left_end_image move_left=$move_left
             dist_images $erm $min_frame $((left_end_image + move_left)) $min_image
         fi
