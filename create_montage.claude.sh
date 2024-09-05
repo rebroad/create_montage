@@ -248,7 +248,9 @@ dist_images() {
     local to_the_right=0
     local left_end_image
     echo "Processing deadzone: $dead_start:$dead_end"
-    for ((i=$start_image; i<=$end_image; i++)); do
+    min_image=$(( start_image < end_image ? start_image : end_image ))
+    max_image=$(( start_image < end_image ? end_image : start_image ))
+    for ((i=min_image; i<=max_image; i++)); do
         if [[ ${image[$i]} -lt $dead_start ]]; then
             to_the_left=$((to_the_left + 1))
             left_end_image=$i
