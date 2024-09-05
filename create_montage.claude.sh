@@ -150,13 +150,13 @@ add_deadzone() {
 }
 
 image_distribute() {
-    start_frame=${1:-0}
+    local start_frame=${1:-0}
     if [ $start_frame -eq -1 ]; then
         start_frame=0
         ignore_deadzones=1
     fi
     local end_frame=${2:-$((TOTAL_FRAMES - 1))}
-    start_image=${3:-0}
+    local start_image=${3:-0}
     local end_image=${4:-$((TOTAL_IMAGES - 1))}
     ignore_deadzones=$5
     population=$((end_image - start_image + 1))
@@ -214,8 +214,9 @@ image_distribute() {
 
     # Find number of images within this deadzone
     dead_images=0
-    to_the_left=0
+    local to_the_left=0
     local to_the_right=0
+    local left_end_image
     echo "Processing deadzone: $dead_start:$dead_end"
     for ((i=$start_image; i<=$end_image; i++)); do
         if [[ ${images[$i]} -lt $dead_start ]]; then
@@ -236,30 +237,30 @@ image_distribute() {
     echo "calculate right density = $to_the_right / $((end_frame - dead_end))"
     right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end)" | bc)
     echo right_density=$right_density
-    move_left=$(echo "scale=0; $dead_images * $right_density / ($left_density) / 1" | bc)
+    local move_left=$(echo "scale=0; $dead_images * $right_density / ($left_density) / 1" | bc)
     local move_right=$((dead_images - move_left))
     echo dead_images=$dead_images move_left=$move_left move_right=$move_right
 
     # Recurse into new livezones
-    step=0
+    local erm=0
     if [ $move_left -gt 0 ]; then
         echo Dist_images $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
         image_distribute $start_frame $((dead_start - 1)) $start_image $((left_end_image + move_left))
-    fi
-    if [ $move_right -gt 0 ]; then
-        echo Dist_images $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
-        image_distribute $((dead_end + 1)) $end_frame $((right_start_image - move_right)) $end_image
-        if [ $move_left -eq 0 ]; then
-            echo After image_dist right. step=$step frame=$frame
-            # TODO - we also need to stretch this side towards the shrunk right
-        fi
-    else
-        echo After image_dist left. step=$step frame=$frame dead_end=$dead_end dead_start=$dead_start erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
         erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
-        if [ $erm -gt $dead_end ]; then
-            # Expand the other side to reduce the gap either side of the deadzone
-            # TODO - merge this with the image_dist for the right side above
-            image_distribute $erm $end_frame $((right_start_image - move_right)) $end_image
+    fi
+    if [ $move_right -gt 0 ] || [ $erm -gt $dead_end ] && [ $to_the_right -gt 0 ]; then
+        if [ $erm -eq 0 ]; then
+            erm=$((dead_end + 1))
+        else
+            echo After image-dist left. step=$step
+        fi
+        echo Dist_images $erm $end_frame $((right_start_image - move_right)) $end_image
+        image_distribute $erm $end_frame $((right_start_image - move_right)) $end_image
+        if [ $move_left -eq 0 ] && [ $to_the_left -gt 0 ]; then
+            echo After image_dist right. step=$step
+            erm=$(echo "($dead_end + 1 - $step + 0.5)/1" | bc)
+            echo Dist_images start_frame=$start_frame erm=$erm start_image=$start_image left_end_image=$left_end_image move_left=$move_left
+            image_distribute $start_frame $erm $start_image $((left_end_image + move_left))
         fi
     fi
     echo "For range final: $start_frame to $end_frame"
