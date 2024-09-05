@@ -266,18 +266,18 @@ dist_images() {
         return
     fi
 
-    echo "left space frames = $start_frame to $dead_start"
-    echo "right space frames = $dead_end to $end_frame"
-    left_space=$((dead_start - start_frame))
-    right_space=$((end_frame - dead_end))
+    echo "left space frames = $frame_min to $dead_start"
+    echo "right space frames = $dead_end to $frame_max"
+    left_space=$((dead_start - frame_min))
+    right_space=$((frame_max - dead_end))
     local move_left=0
     local move_right=0
     if [ $left_space -gt 0 ] && [ $right_space -gt 0 ]; then
-        echo "calculate left density = $to_the_left / $((dead_start - start_frame + 1))"
-        left_density=$(echo "scale=6; $to_the_left / ($dead_start - $start_frame + 1)" | bc)
+        echo "calculate left density = $to_the_left / $((dead_start - frame_min + 1))"
+        left_density=$(echo "scale=6; $to_the_left / ($dead_start - $frame_min + 1)" | bc)
         echo left_density=$left_density
-        echo "calculate right density = $to_the_right / $((end_frame - dead_end + 1))"
-        right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end + 1)" | bc)
+        echo "calculate right density = $to_the_right / $((frame_max - dead_end + 1))"
+        right_density=$(echo "scale=6; $to_the_right / ($frame_max - $dead_end + 1)" | bc)
         echo right_density=$right_density
         optimal_algo1_left=$(echo "scale=6; $dead_images * $right_density / $left_density" | bc)
         echo optimal_algo1_left=$optimal_algo1_left
@@ -290,12 +290,12 @@ dist_images() {
         echo algo2_left=$algo2_left
         algo2_right=$((dead_images - algo2_left))
 
-        left_density=$(echo "scale=6; ($to_the_left + $algo1_left) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $algo1_right) / ($end_frame - $dead_end)" | bc)
+        left_density=$(echo "scale=6; ($to_the_left + $algo1_left) / ($dead_start - $frame_min)" | bc)
+        right_density=$(echo "scale=6; ($to_the_right + $algo1_right) / ($frame_max - $dead_end)" | bc)
         algo1_diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
         echo Algo1 density left=$left_density right=$right_density algo1_diff=$algo1_diff
-        left_density=$(echo "scale=6; ($to_the_left + $algo2_left) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $algo2_right) / ($end_frame - $dead_end)" | bc)
+        left_density=$(echo "scale=6; ($to_the_left + $algo2_left) / ($dead_start - $frame_min)" | bc)
+        right_density=$(echo "scale=6; ($to_the_right + $algo2_right) / ($frame_max - $dead_end)" | bc)
         algo2_diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
         echo Algo2 density left=$left_density right=$right_density algo2_diff=$algo2_diff
 
