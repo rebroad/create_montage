@@ -226,7 +226,11 @@ dist_images() {
         fi
         size=$((temp_dead_end - temp_dead_start + 1))
         midpoint=$(( (temp_dead_start + temp_dead_end) / 2))
-        if (( size > max_size )) || (( size == max_size && ${midpoint-center#-} < ${closest_to_center-center#-} )); then
+        dist_from_center=$((midpoint - center))
+        best_dist_from_center=$((closest_to_center - center))
+        echo dist_from_center=$dist_from_center better_dist=${dist_from_center#-}
+        echo Deadzone=$temp_dead_start:$temp_dead_end midpoint=$midpoint dist_from_center=${midpoint-center#-}
+        if (( size > max_size )) || (( size == max_size && ${dist_from_center#-} < ${best_dist_from_center#-} )); then
             max_size=$size
             closest_to_center=$midpoint
             dead_start=$temp_dead_start
