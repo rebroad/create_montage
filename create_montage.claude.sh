@@ -252,15 +252,15 @@ image_distribute() {
         echo "calculate right density = $to_the_right / $((end_frame - dead_end + 1))"
         right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end + 1)" | bc)
         echo right_density=$right_density
-        optimal_algo2_left=$(echo "scale=6; ($dead_images * $right_space + $to_the_right * $left_space - $to_the_left * $right_space) / ($left_space + $right_space)" | bc)
-        echo optimal_algo2_left=$optimal_algo2_left
-        algo2_left=$(echo "($optimal_algo2_left + 0.5)/1" | bc)
-        echo algo2_left=$algo2_left
         optimal_algo1_left=$(echo "scale=6; $dead_images * $right_density / $left_density" | bc)
         echo optimal_algo1_left=$optimal_algo1_left
         algo1_left=$(echo "($optimal_algo1_left + 0.5)/1" | bc)
         echo algo1_left=$algo1_left
         algo1_right=$((dead_images - algo1_left))
+        optimal_algo2_left=$(echo "scale=6; ($dead_images * $right_space + $to_the_right * $left_space - $to_the_left * $right_space) / ($left_space + $right_space)" | bc)
+        echo optimal_algo2_left=$optimal_algo2_left
+        algo2_left=$(echo "($optimal_algo2_left + 0.5)/1" | bc)
+        echo algo2_left=$algo2_left
         algo2_right=$((dead_images - algo2_left))
 
         left_density=$(echo "scale=6; ($to_the_left + $algo1_left) / ($dead_start - $start_frame)" | bc)
