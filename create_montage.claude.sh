@@ -166,9 +166,9 @@ image_distribute() {
     step=$(echo "scale=6; ($end_frame - $start_frame) / ($population - 1)" | bc)
     echo Distribute images "$start_image"-"$end_image" between frames "$start_frame"-"$end_frame" step=$step
     for ((i=$start_image; i<=$end_image; i++)); do
-        frame=$(echo "scale=6; $start_frame + ($i * $step)" | bc)
+        frame=$(echo "scale=6; $start_frame + (($i - $start_image) * $step)" | bc)
         images[$i]=$(echo "($frame+0.5)/1" | bc)
-        #echo image=$i frame=$frame position=${images[$i]}
+        echo image=$i frame=$frame position=${images[$i]}
     done
     echo "Selected frames: ${images[*]}"
 
@@ -255,8 +255,13 @@ image_distribute() {
             # TODO - we also need to stretch this side towards the shrunk right
         fi
     else
-        echo After image_dist left. step=$step frame=$frame
-        # TODO - we also need to stretch this side towards the shrunk left
+        echo After image_dist left. step=$step frame=$frame dead_end=$dead_end dead_start=$dead_start erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
+        erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
+        if [ $erm -gt $dead_end ]; then
+            # Expand the other side to reduce the gap either side of the deadzone
+            # TODO - merge this with the image_dist for the right side above
+            image_distribute $erm $end_frame $((right_start_image - move_right)) $end_image
+        fi
     fi
     echo "For range final: $start_frame to $end_frame"
     echo "Selected frames: ${images[*]}"
