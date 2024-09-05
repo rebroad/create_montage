@@ -7,6 +7,7 @@ LOG="/tmp/ffmpeg_log_$$.log"
 mkdir -p "$TEMP" && : > "$LOG"
 
 INTERACTIVE_MODE=false
+SHOW_NUMBERS=false
 
 for arg; do
     case "$arg" in
@@ -14,6 +15,7 @@ for arg; do
         *:*) ASPECT_RATIO="$arg" ;;
         *x*) GRID="$arg" ;;
         -i) INTERACTIVE_MODE=true ;;
+        -n) SHOW_NUMBERS=true ;;
         *) [ -z "$START_IMAGE" ] && START_IMAGE="$arg" || END_IMAGE="$arg" ;;
     esac
 done
@@ -351,7 +353,7 @@ generate_montage() {
         OUT_FRAME="$TEMP/frame_$i.png"
         PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
         echo "Extracting frame $i ($PERCENT% of $what)$resizing"
-        if [ "$INTERACTIVE_MODE" = true ]; then
+        if [ "$SHOW_NUMBERS" = true ]; then
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
