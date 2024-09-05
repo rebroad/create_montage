@@ -235,6 +235,9 @@ image_distribute() {
         fi
     done
     echo left_end_image=$left_end_image dead_images=$dead_images to_left=$to_the_left to_right=$to_the_right
+    if [ $dead_images -eq 0 ]; then
+        return
+    fi
 
     echo "left space frames = $start_frame to $dead_start"
     echo "right space frames = $dead_end to $end_frame"
@@ -249,42 +252,33 @@ image_distribute() {
         echo "calculate right density = $to_the_right / $((end_frame - dead_end + 1))"
         right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end + 1)" | bc)
         echo right_density=$right_density
-        optimal_new_left=$(echo "scale=6; ($dead_images * $right_space + $to_the_right * $left_space - $to_the_left * $right_space) / ($left_space + $right_space)" | bc)
-        echo optimal_new_left=$optimal_new_left
-        new_left=$(echo "($optimal_new_left + 0.5)/1" | bc)
-        optimal_old_left=$(echo "scale=6; $dead_images * $right_density / $left_density" | bc)
-        echo optimal_old_left=$optimal_old_left
-        move_left=$(echo "scale=0; $dead_images * $right_density / $left_density / 1" | bc)
-        optimal_better_left=$(echo "scale=6; $dead_images * $right_density / $left_density + 0.5" | bc)
-        echo optimal_better_left=$optimal_better_left
-        better_left=$(echo "($dead_images * $right_density / $left_density + 0.5) / 1" | bc)
-        echo better_left=$better_left
-        better_left2=$(echo "(($dead_images * $right_density / $left_density) + 0.5) / 1" | bc)
-        echo better_left2=$better_left2
-        better_left4=$(echo "($optimal_old_left + 0.5)/1" | bc)
-        echo better_left4=$better_left4
-        move_right=$((dead_images - move_left))
-        new_right=$((dead_images - new_left))
-        better_right=$((dead_images - better_left))
-        better_right4=$((dead_images - better_left4))
+        optimal_algo2_left=$(echo "scale=6; ($dead_images * $right_space + $to_the_right * $left_space - $to_the_left * $right_space) / ($left_space + $right_space)" | bc)
+        echo optimal_algo2_left=$optimal_algo2_left
+        algo2_left=$(echo "($optimal_algo2_left + 0.5)/1" | bc)
+        echo algo2_left=$algo2_left
+        optimal_algo1_left=$(echo "scale=6; $dead_images * $right_density / $left_density" | bc)
+        echo optimal_algo1_left=$optimal_algo1_left
+        algo1_left=$(echo "($optimal_algo1_left + 0.5)/1" | bc)
+        echo algo1_left=$algo1_left
+        algo1_right=$((dead_images - algo1_left))
+        algo2_right=$((dead_images - algo2_left))
 
-        left_density=$(echo "scale=6; ($to_the_left + $move_left) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $move_right) / ($end_frame - $dead_end)" | bc)
-        diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
-        echo Resulting density left=$left_density right=$right_density diff=$diff
-        left_density=$(echo "scale=6; ($to_the_left + $better_left) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $better_right) / ($end_frame - $dead_end)" | bc)
-        diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
-        echo Better density left=$left_density right=$right_density diff=$diff
-        left_density=$(echo "scale=6; ($to_the_left + $better_left4) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $better_right4) / ($end_frame - $dead_end)" | bc)
-        diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
-        echo Better4 density left=$left_density right=$right_density diff=$diff
-        left_density=$(echo "scale=6; ($to_the_left + $new_left) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $new_right) / ($end_frame - $dead_end)" | bc)
-        diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
-        echo New density left=$left_density right=$right_density diff=$diff
+        left_density=$(echo "scale=6; ($to_the_left + $algo1_left) / ($dead_start - $start_frame)" | bc)
+        right_density=$(echo "scale=6; ($to_the_right + $algo1_right) / ($end_frame - $dead_end)" | bc)
+        algo1_diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
+        echo Algo1 density left=$left_density right=$right_density algo1_diff=$algo1_diff
+        left_density=$(echo "scale=6; ($to_the_left + $algo2_left) / ($dead_start - $start_frame)" | bc)
+        right_density=$(echo "scale=6; ($to_the_right + $algo2_right) / ($end_frame - $dead_end)" | bc)
+        algo2_diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
+        echo Algo2 density left=$left_density right=$right_density algo2_diff=$algo2_diff
 
+        if (( $(echo "$algo1_diff < $algo2_diff" | bc) )); then
+            echo Using algo1
+            move_left=$algo1_left; move_right=$algo1_right
+        else
+            echo Using algo2
+            move_left=$algo2_left; move_right=$algo2_right
+        fi
     elif [ $left_space -gt 0 ]; then
         move_left=$dead_images
     elif [ $right_space -gt 0 ]; then
@@ -294,7 +288,7 @@ image_distribute() {
         exit
     fi
         
-    echo dead_images=$dead_images move_left=$move_left move_right=$move_right better_left=$better_left better_right=$better_right new_left=$new_left new_right=$new_right
+    echo dead_images=$dead_images move_left=$move_left move_right=$move_right algo1_left=$algo1_left algo1_right=$algo1_right algo2_left=$algo2_left algo2_right=$algo2_right
 
     # Recurse into new livezones
     local erm=0
