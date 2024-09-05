@@ -68,17 +68,21 @@ fi
 TARGET_RATIO=$(bc -l <<< "scale=10; $WIDTH/$HEIGHT")
 echo "Target aspect ratio: $WIDTH:$HEIGHT ($TARGET_RATIO)"
 
-AVAILABLE_FRAMES=$TOTAL_FRAMES
-deadzones=()
-if [ -f "$DEADZONE_FILE" ]; then
-    while IFS=':' read start end; do
-        end=$(trim "$end")
-        AVAILABLE_FRAMES=$((AVAILABLE_FRAMES - (end - start + 1)))
-        deadzones+=("$start" "$end")
-        echo "DEBUG: Added deadzone $start:$end"
-    done < "$DEADZONE_FILE"
-fi
-echo "Total available frames (excluding deadzones): $AVAILABLE_FRAMES"
+load_deadzones() {
+    AVAILABLE_FRAMES=$TOTAL_FRAMES
+    deadzones=()
+    if [ -f "$DEADZONE_FILE" ]; then
+        while IFS=':' read start end; do
+            end=$(trim "$end")
+            AVAILABLE_FRAMES=$((AVAILABLE_FRAMES - (end - start + 1)))
+            deadzones+=("$start" "$end")
+            echo "DEBUG: Added deadzone $start:$end"
+        done < "$DEADZONE_FILE"
+    fi
+    echo "Total available frames (excluding deadzones): $AVAILABLE_FRAMES"
+}
+
+load_deadzones
 
 find_optimal_grid() {
     local target_rows=$1
@@ -147,6 +151,7 @@ add_deadzone() {
     [[ "$OSTYPE" == "cygwin"* ]] && attrib +h "$(cygpath -w "$DEADZONE_FILE")" >/dev/null 2>&1
     echo "Added and merged deadzones. Current deadzones:"
     cat "$DEADZONE_FILE"
+    load_deadzones
 }
 
 image_distribute() {
@@ -231,14 +236,30 @@ image_distribute() {
     done
     echo left_end_image=$left_end_image dead_images=$dead_images to_left=$to_the_left to_right=$to_the_right
 
-    echo "calculate left density = $to_the_left / $((dead_start - start_frame))"
-    left_density=$(echo "scale=6; $to_the_left / ($dead_start - $start_frame)" | bc)
-    echo left_density=$left_density
-    echo "calculate right density = $to_the_right / $((end_frame - dead_end))"
-    right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end)" | bc)
-    echo right_density=$right_density
-    local move_left=$(echo "scale=0; $dead_images * $right_density / ($left_density) / 1" | bc)
-    local move_right=$((dead_images - move_left))
+    echo "left space frames = $start_frame to $dead_start"
+    echo "right space frames = $dead_end to $end_frame"
+    left_space=$((dead_start - start_frame))
+    right_space=$((end_frame - dead_end))
+    local move_left=0
+    local move_right=0
+    if [ $left_space -gt 0 ] && [ $right_space -gt 0 ]; then
+        echo "calculate left density = $to_the_left / $((dead_start - start_frame))"
+        left_density=$(echo "scale=6; $to_the_left / ($dead_start - $start_frame)" | bc)
+        echo left_density=$left_density
+        echo "calculate right density = $to_the_right / $((end_frame - dead_end))"
+        right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end)" | bc)
+        echo right_density=$right_density
+        move_left=$(echo "scale=0; $dead_images * $right_density / ($left_density) / 1" | bc)
+        move_right=$((dead_images - move_left))
+    elif [ $left_space -gt 0 ]; then
+        move_left=$dead_images
+    elif [ $right_space -gt 0 ]; then
+        move_right=$dead_images
+    else
+        echo No adjacent spaces to move deadzone - need more algorithm!
+        exit
+    fi
+        
     echo dead_images=$dead_images move_left=$move_left move_right=$move_right
 
     # Recurse into new livezones
