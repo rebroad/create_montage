@@ -302,25 +302,28 @@ dist_images() {
         exit
     fi
         
-    echo dead_images=$dead_images move_left=$move_left move_right=$move_right algo1_left=$algo1_left algo1_right=$algo1_right algo2_left=$algo2_left algo2_right=$algo2_right
+    echo dead_images=$dead_images move_left=$move_left move_right=$move_right
 
-    # Recurse into new livezones
+    echo Recurse into new livezones
     local erm=0
     if [ $move_left -gt 0 ]; then
         echo Left dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
         dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
         erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
+    else
+        echo No left side to process
     fi
     if [ $to_the_right -gt 0 ]; then
+        echo Processing right side
         # TODO - we also need to enter here even if erm is less than dead_end if the first frame on the right
         # needs to be closer to the deadzone.
         if [ $erm -lt $((dead_end + 1)) ]; then
-            if [ $erm -eq 0 ]; then
+            if [ $erm -ne 0 ]; then
                 echo "After left dist_images (frames $min_frame to $((dead_start - 1))) out of $min_frame to $max_frame. step=$step"
             fi
             erm=$((dead_end + 1))
         fi
-        echo Right dist_images $erm $max_frame $((right_start_image - move_right)) $max_image
+        echo "Right dist_images $erm $max_frame $((right_start_image - move_right)) $max_image (within $min_frame to $((dead_start - 1)) run)"
         dist_images $erm $max_frame $((right_start_image - move_right)) $max_image
         if [ $move_left -eq 0 ] && [ $to_the_left -gt 0 ]; then
             echo "After right dist_images (frames $erm to $max_frame) out of $min_frame to $max_frame. step=$step"
