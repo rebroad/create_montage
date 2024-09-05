@@ -171,27 +171,42 @@ dist_images() {
     local end_frame=${2:-$((TOTAL_FRAMES - 1))}
     local start_image=${3:-0}
     local end_image=${4:-$((TOTAL_IMAGES - 1))}
-    if [ $end_image -lt $start_image ]; then
-        direction=-1
+    echo "Entering dist_images: frames=$start_frame-$end_frame images=$start_image-$end_image"
+
+    # TODO if start_image equals end_image, then choose a frame in the middle, UNLESS the current image is
+    # the first or the last frame of the video
+
+    if [ $start_image -eq $end_image ]; then
+        frame=${image[$start_image]}
+        if [ $frame -ne 0 ] && [ $frame -ne $((TOTAL_FRAMES - 1)) ]; then
+            image[$start_image]=$(( (start_frame + end_frame) / 2))
+            echo "Placing image $start_frame in center of $start_frame:$end_frame at frame=${image[$start_image]}"
+        else
+            echo "Keep image $start_image at it's current position (${image[$start_image]}) as it's special."
+        fi
+        direction=0
     else
-        direction=1
+        if [ $end_image -lt $start_image ]; then
+            direction=-1
+        else
+            direction=1
+        fi
+        step=$(echo "scale=6; ($end_frame - $start_frame) / ($end_image - $start_image)" | bc)
+        echo Distribute images "$start_image"-"$end_image" between frames "$start_frame"-"$end_frame" step=$step
     fi
-    echo "Distribute_images: frames=$start_frame-$end_frame images=$start_image-$end_image"
 
     # Distribute the images evenly among this frames
-    step=$(echo "scale=6; ($end_frame - $start_frame) / ($end_image - $start_image)" | bc)
-    echo Distribute images "$start_image"-"$end_image" between frames "$start_frame"-"$end_frame" step=$step
     for ((i=start_image; i!=end_image+direction; i+=direction)); do
         frame=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
-        echo frame=$frame images[$i]=${images[$i]}
-        if [ -n "${images[$i]}" ] && [ $frame -eq "${images[$i]}" ]; then
+        echo frame=$frame image[$i]=${image[$i]}
+        if [ -n "${image[$i]}" ] && [ $frame -eq "${image[$i]}" ]; then
             echo Breaking out of even distribution as image[$i] is already frame $frame
             break
         fi
-        images[$i]=$frame
-        #echo images[$i]=${images[$i]}
+        image[$i]=$frame
+        #echo image[$i]=${image[$i]}
     done
-    echo "Selected frames: ${images[*]}"
+    echo "Selected frames: ${image[*]}"
 
     if [ "$ignore_deadzones" != "" ]; then
         echo Ignoring deadzones = ".$ignore_deadzones."
@@ -233,13 +248,13 @@ dist_images() {
     local left_end_image
     echo "Processing deadzone: $dead_start:$dead_end"
     for ((i=$start_image; i<=$end_image; i++)); do
-        if [[ ${images[$i]} -lt $dead_start ]]; then
+        if [[ ${image[$i]} -lt $dead_start ]]; then
             to_the_left=$((to_the_left + 1))
             left_end_image=$i
-        elif [[ ${images[$i]} -ge $dead_start && ${images[$i]} -le $dead_end ]]; then
+        elif [[ ${image[$i]} -ge $dead_start && ${image[$i]} -le $dead_end ]]; then
             dead_images=$((dead_images + 1))
             right_start_image=$((i + 1))
-        elif [[ ${images[$i]} -gt $dead_end ]]; then
+        elif [[ ${image[$i]} -gt $dead_end ]]; then
             to_the_right=$((to_the_right + 1))
         fi
     done
@@ -327,7 +342,7 @@ dist_images() {
         echo Apparently no need to call right dist_images. erm=$erm dead_end=$dead_end to_right=$to_the_right
     fi
     echo "For range final: $start_frame to $end_frame"
-    echo "Selected frames: ${images[*]}"
+    echo "Selected frames: ${image[*]}"
 }
 
 generate_montage() {
@@ -340,8 +355,8 @@ generate_montage() {
     [ -n "$2" ] && { what="selected range"; }
     [ -n "$3" ] && { what="selected range"; }
     [ -n "$RESIZE" ] && { resizing=" and resizing"; }
-    for i in "${!images[@]}"; do
-        FRAME_NUM=${images[$i]}
+    for i in "${!image[@]}"; do
+        FRAME_NUM=${image[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
         PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
         echo "Extracting frame $i ($PERCENT% of $what)$resizing"
