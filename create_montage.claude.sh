@@ -184,19 +184,22 @@ distribute_images() {
     max_size=0
     closest_to_center=0
     center=$(( (start_frame + end_frame) / 2))
+    echo Finding largest deadzone within frames $start_frame to $end_frame
     for ((i=0; i<${#deadzones[@]}; i+=2)); do
         temp_dead_start=${deadzones[i]}
         temp_dead_end=${deadzones[i+1]}
+        echo temp_dead_start=$temp_dead_start temp_dead_end=$temp_dead_end
         if (( temp_dead_end < start_frame || temp_dead_start > end_frame )); then
             continue
         fi
         size=$((temp_dead_end - temp_dead_start + 1))
         midpoint=$(( (temp_dead_start + temp_dead_end) / 2))
-        if (( size > max_size || (size == max_size && abs(midpoint-center) < abs(closest_to_center-center)) )); then
+        if (( size > max_size )) || (( size == max_size && $(abs $((midpoint-center))) < $(abs $((closest_to_center-center))) )); then
             max_size=$size
             closest_to_center=$midpoint
             dead_start=$temp_dead_start
             local dead_end=$temp_dead_end
+            echo best deadzone found so far: $dead_start:$dead_end
         fi
     done
 
