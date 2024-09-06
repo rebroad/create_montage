@@ -276,9 +276,9 @@ dist_images() {
         for move_left in $(seq 0 $dead_images); do
             move_right=$((dead_images - move_left))
             left_density=$(echo "scale=6; ($images_left + $move_left) / $spaces_left" | bc)
-            echo "left_density = $left_density = ($images_left + $move_left) / $spaces_left"
+            #echo "left_density = $left_density = ($images_left + $move_left) / $spaces_left"
             right_density=$(echo "scale=6; ($images_right + $move_right) / $spaces_right" | bc)
-            echo "right_density = $right_density = ($images_right + $move_right) / $spaces_right"
+            #echo "right_density = $right_density = ($images_right + $move_right) / $spaces_right"
             diff=$(echo "scale=10; ($left_density - $right_density)^2" | bc)
             if (( $(echo "$diff < $best_diff" | bc) )); then
                 best_diff=$diff
@@ -302,14 +302,14 @@ dist_images() {
 
     echo Recurse into new livezones
     local erm=0
-    if [ $images_left -gt 0 ]; then
+    if [ $images_left -gt 0 ]; then # TODO - this is done after right dist_images so maybe only do if move_left>0
         echo Left dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
-        dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
-        if [ -n "$step" ]; then
+        step=""; dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
+        if [ "$step" != "" ]; then
             erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
-            echo step=$step erm=$erm
+            echo After Left dist_images step=$step erm=$erm
         else
-            echo step was blank so erm=0
+            echo step was blank so erm stays zero
         fi
     else
         echo No left side to process
