@@ -48,7 +48,7 @@ def find_optimal_grid(target_rows=None, target_cols=None):
     start_y, end_y = (target_rows, target_rows) if target_rows else (1, AVAILABLE_FRAMES)
     for y in range(start_y, end_y + 1):
         LAST_X_DIFF = float('inf')
-        start_x = math.ceil(y * TARGET_RATIO * FRAME_HEIGHT / FRAME_WIDTH)
+        start_x = int((y * TARGET_RATIO * FRAME_HEIGHT) / FRAME_WIDTH)
         if start_x * y > AVAILABLE_FRAMES:
             break
         end_x = target_cols if target_cols else AVAILABLE_FRAMES // y
@@ -60,10 +60,10 @@ def find_optimal_grid(target_rows=None, target_cols=None):
                 COLS, ROWS = x, y
                 print("BEST! ", end="")
             elif LAST_X_DIFF < RATIO_DIFF:
-                print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF} - XBreak")
+                print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF:.10f} - XBreak")
                 break
+            print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF:.10f}")
             LAST_X_DIFF = RATIO_DIFF
-            print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF}")
     print(f"Optimal grid: {COLS}x{ROWS}")
 
 def add_deadzone(start, end=None):
@@ -87,10 +87,8 @@ def add_deadzone(start, end=None):
 
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     global image, livezones, zone_id
-    ignore_deadzones = False
-    if start_frame == -1:
-        start_frame = 0
-        ignore_deadzones = True
+    ignore_deadzones = start_frame == -1
+    start_frame = max(0, start_frame)
     end_frame = end_frame or TOTAL_FRAMES - 1
     end_image = end_image or TOTAL_IMAGES - 1
     zone_id = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else zone_id + 1
@@ -107,7 +105,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     else:
         direction = 1 if end_image > start_image else -1
         step = (end_frame - start_frame) / (end_image - start_image)
-        print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step}")
+        print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.6f}")
 
     for i in range(start_image, end_image + direction, direction):
         frame = int(start_frame + ((i - start_image) * step) + 0.5)
@@ -116,12 +114,13 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             break
         image[i] = frame
         livezones[i] = zone_id
-    print(f"After dist frames: {image}")
+    print(f"After dist frames: {' '.join(map(str, image))}")
 
     if ignore_deadzones:
         print(f"Ignoring deadzones = {ignore_deadzones}")
         return
 
+    print(f"Finding largest deadzone within frames {start_frame} to {end_frame}")
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
     center = (start_frame + end_frame) // 2
     best_deadzone = max(
@@ -342,7 +341,7 @@ if __name__ == "__main__":
     else:
         WIDTH, HEIGHT = 16, 9
     TARGET_RATIO = WIDTH / HEIGHT
-    print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO})")
+    print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
 
     load_deadzones()
 
@@ -377,7 +376,7 @@ if __name__ == "__main__":
         generate_montage(OUT)
     else:
         while True:
-            print("\n1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
+            print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
             print("4. Show current deadzones  5. Exit")
             choice = input("Enter your choice: ")
             if choice == '1':
