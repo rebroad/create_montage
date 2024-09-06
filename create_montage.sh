@@ -7,6 +7,7 @@ LOG="/tmp/ffmpeg_log_$$.log"
 mkdir -p "$TEMP" && : > "$LOG"
 
 INTERACTIVE_MODE=false
+SHOW_NUMBERS=false
 
 for arg; do
     case "$arg" in
@@ -14,6 +15,7 @@ for arg; do
         *:*) ASPECT_RATIO="$arg" ;;
         *x*) GRID="$arg" ;;
         -i) INTERACTIVE_MODE=true ;;
+        -n) SHOW_NUMBERS=true ;;
         *) [ -z "$START_IMAGE" ] && START_IMAGE="$arg" || END_IMAGE="$arg" ;;
     esac
 done
@@ -88,7 +90,6 @@ find_optimal_grid() {
     local target_rows=$1
     local target_cols=$2
     echo "Searching for optimal grid for $WIDTH:$HEIGHT aspect ratio"
-    # TODO - this can be optimized to skip most of the configs
     MIN_RATIO_DIFF=1000000
     start_y=1; end_y=$AVAILABLE_FRAMES; end_x=$AVAILABLE_FRAMES
     [ -n "$target_rows" ] && start_y=$target_rows && end_y=$target_rows
@@ -154,14 +155,6 @@ add_deadzone() {
     load_deadzones
 }
 
-abs() {
-    if (( $1 < 0 )); then
-        echo $(( -1 * $1 ))
-    else
-        echo $1
-    fi
-}
-
 dist_images() {
     local start_frame=${1:-0}
     if [ $start_frame -eq -1 ]; then
@@ -172,9 +165,6 @@ dist_images() {
     local start_image=${3:-0}
     local end_image=${4:-$((TOTAL_IMAGES - 1))}
     echo "Entering dist_images: frames=$start_frame-$end_frame images=$start_image-$end_image"
-
-    # TODO if start_image equals end_image, then choose a frame in the middle, UNLESS the current image is
-    # the first or the last frame of the video
 
     if [ $start_image -eq $end_image ]; then
         frame=${image[$start_image]}
@@ -198,15 +188,13 @@ dist_images() {
     # Distribute the images evenly among this frames
     for ((i=start_image; i!=end_image+direction; i+=direction)); do
         frame=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
-        echo frame=$frame image[$i]=${image[$i]}
+        echo image=$i frame: ${image[$i]} -> $frame
         if [ -n "${image[$i]}" ] && [ $frame -eq "${image[$i]}" ]; then
-            echo Breaking out of even distribution as image[$i] is already frame $frame
             break
         fi
         image[$i]=$frame
-        #echo image[$i]=${image[$i]}
     done
-    echo "Selected frames: ${image[*]}"
+    echo "After dist frames: ${image[*]}"
 
     if [ "$ignore_deadzones" != "" ]; then
         echo Ignoring deadzones = ".$ignore_deadzones."
@@ -217,132 +205,138 @@ dist_images() {
     max_size=0
     closest_to_center=0
     center=$(( (start_frame + end_frame) / 2))
-    echo Finding largest deadzone within frames $start_frame to $end_frame
+
+    local min_frame=$(( start_frame < end_frame ? start_frame : end_frame ))
+    local max_frame=$(( start_frame < end_frame ? end_frame : start_frame ))
+    local dead_start
+    local dead_end
+
+    echo Finding largest deadzone within frames $min_frame to $max_frame
     for ((i=0; i<${#deadzones[@]}; i+=2)); do
         temp_dead_start=${deadzones[i]}
         temp_dead_end=${deadzones[i+1]}
         #echo temp_dead_start=$temp_dead_start temp_dead_end=$temp_dead_end
-        if (( temp_dead_end < start_frame || temp_dead_start > end_frame )); then
+        if (( temp_dead_end < min_frame || temp_dead_start > max_frame )); then
             continue
         fi
         size=$((temp_dead_end - temp_dead_start + 1))
         midpoint=$(( (temp_dead_start + temp_dead_end) / 2))
-        if (( size > max_size )) || (( size == max_size && $(abs $((midpoint-center))) < $(abs $((closest_to_center-center))) )); then
+        dist_from_center=$((midpoint - center))
+        best_dist_from_center=$((closest_to_center - center))
+        if (( size > max_size )) || (( size == max_size && ${dist_from_center#-} < ${best_dist_from_center#-} )); then
             max_size=$size
             closest_to_center=$midpoint
             dead_start=$temp_dead_start
-            local dead_end=$temp_dead_end
-            echo best deadzone found so far: $dead_start:$dead_end
+            dead_end=$temp_dead_end
+            #echo best deadzone found so far: $dead_start:$dead_end
         fi
     done
 
     if [ $max_size -eq 0 ]; then
-        echo No deadzones within frames $start_frame to $end_frame
+        echo No deadzones within frames $min_frame to $max_frame
         return
     fi
 
     # Find number of images within this deadzone
     dead_images=0
-    local to_the_left=0
-    local to_the_right=0
-    local left_end_image
+    local images_left=0
+    local images_right=0
     echo "Processing deadzone: $dead_start:$dead_end"
-    for ((i=$start_image; i<=$end_image; i++)); do
+    local min_image=$(( start_image < end_image ? start_image : end_image ))
+    local max_image=$(( start_image < end_image ? end_image : start_image ))
+    for ((i=min_image; i<=max_image; i++)); do
         if [[ ${image[$i]} -lt $dead_start ]]; then
-            to_the_left=$((to_the_left + 1))
-            left_end_image=$i
+            images_left=$((images_left + 1))
+            local left_end_image=$i
         elif [[ ${image[$i]} -ge $dead_start && ${image[$i]} -le $dead_end ]]; then
             dead_images=$((dead_images + 1))
-            right_start_image=$((i + 1))
+            local right_start_image=$((i + 1))
         elif [[ ${image[$i]} -gt $dead_end ]]; then
-            to_the_right=$((to_the_right + 1))
+            images_right=$((images_right + 1))
         fi
     done
-    echo left_end_image=$left_end_image dead_images=$dead_images to_left=$to_the_left to_right=$to_the_right
+    echo dead_images=$dead_images images_on_left=$images_left images_on_right=$images_right
     if [ $dead_images -eq 0 ]; then
         return
     fi
 
-    echo "left space frames = $start_frame to $dead_start"
-    echo "right space frames = $dead_end to $end_frame"
-    left_space=$((dead_start - start_frame))
-    right_space=$((end_frame - dead_end))
+    echo "livezones: left: $min_frame:$((dead_start - 1)) right: $((dead_end + 1)):$max_frame"
+    spaces_left=$((dead_start - min_frame))
+    spaces_right=$((max_frame - dead_end))
+    best_diff=999999
+    best_move_left=0
     local move_left=0
     local move_right=0
-    if [ $left_space -gt 0 ] && [ $right_space -gt 0 ]; then
-        echo "calculate left density = $to_the_left / $((dead_start - start_frame + 1))"
-        left_density=$(echo "scale=6; $to_the_left / ($dead_start - $start_frame + 1)" | bc)
-        echo left_density=$left_density
-        echo "calculate right density = $to_the_right / $((end_frame - dead_end + 1))"
-        right_density=$(echo "scale=6; $to_the_right / ($end_frame - $dead_end + 1)" | bc)
-        echo right_density=$right_density
-        optimal_algo1_left=$(echo "scale=6; $dead_images * $right_density / $left_density" | bc)
-        echo optimal_algo1_left=$optimal_algo1_left
-        algo1_left=$(echo "($optimal_algo1_left + 0.5)/1" | bc)
-        echo algo1_left=$algo1_left
-        algo1_right=$((dead_images - algo1_left))
-        optimal_algo2_left=$(echo "scale=6; ($dead_images * $right_space + $to_the_right * $left_space - $to_the_left * $right_space) / ($left_space + $right_space)" | bc)
-        echo optimal_algo2_left=$optimal_algo2_left
-        algo2_left=$(echo "($optimal_algo2_left + 0.5)/1" | bc)
-        echo algo2_left=$algo2_left
-        algo2_right=$((dead_images - algo2_left))
 
-        left_density=$(echo "scale=6; ($to_the_left + $algo1_left) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $algo1_right) / ($end_frame - $dead_end)" | bc)
-        algo1_diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
-        echo Algo1 density left=$left_density right=$right_density algo1_diff=$algo1_diff
-        left_density=$(echo "scale=6; ($to_the_left + $algo2_left) / ($dead_start - $start_frame)" | bc)
-        right_density=$(echo "scale=6; ($to_the_right + $algo2_right) / ($end_frame - $dead_end)" | bc)
-        algo2_diff=$(bc <<< "scale=10; ($left_density - $right_density)^2")
-        echo Algo2 density left=$left_density right=$right_density algo2_diff=$algo2_diff
+    if [ $spaces_left -gt 0 ] && [ $spaces_right -gt 0 ]; then
+        for move_left in $(seq 0 $dead_images); do
+            move_right=$((dead_images - move_left))
+            left_density=$(echo "scale=6; ($images_left + $move_left) / $spaces_left" | bc)
+            #echo "left_density = $left_density = ($images_left + $move_left) / $spaces_left"
+            right_density=$(echo "scale=6; ($images_right + $move_right) / $spaces_right" | bc)
+            #echo "right_density = $right_density = ($images_right + $move_right) / $spaces_right"
+            diff=$(echo "scale=10; ($left_density - $right_density)^2" | bc)
+            if (( $(echo "$diff < $best_diff" | bc) )); then
+                best_diff=$diff
+                best_move_left=$move_left
+                #echo best_move_left=$move_left best_diff=$diff
+            fi
+        done
+        move_left=$best_move_left
+        move_right=$((dead_images - move_left))
 
-        if (( $(echo "$algo1_diff < $algo2_diff" | bc) )); then
-            echo Using algo1
-            move_left=$algo1_left; move_right=$algo1_right
-        else
-            echo Using algo2
-            move_left=$algo2_left; move_right=$algo2_right
-        fi
-    elif [ $left_space -gt 0 ]; then
+    elif [ $spaces_left -gt 0 ]; then
         move_left=$dead_images
-    elif [ $right_space -gt 0 ]; then
+    elif [ $spaces_right -gt 0 ]; then
         move_right=$dead_images
     else
-        echo No adjacent spaces to move deadzone - need more algorithm!
+        echo No adjacent spaces to move dead images to - need more algorithm!
         exit
     fi
         
-    echo dead_images=$dead_images move_left=$move_left move_right=$move_right algo1_left=$algo1_left algo1_right=$algo1_right algo2_left=$algo2_left algo2_right=$algo2_right
+    echo dead_images=$dead_images move_left=$move_left move_right=$move_right
 
-    # Recurse into new livezones
+    echo Recurse into new livezones
     local erm=0
     if [ $move_left -gt 0 ]; then
-        echo Left dist_images $((dead_start - 1)) $start_frame $((left_end_image + move_left)) $start_image
-        dist_images $((dead_start - 1)) $start_frame $((left_end_image + move_left)) $start_image
-        erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
+        echo Left dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
+        step=""; dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
+        if [ "$step" != "" ]; then
+            erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
+            echo After Left dist_images step=$step erm=$erm
+        else
+            echo step was blank so erm stays zero
+        fi
+    else
+        echo No left side to process
     fi
-    if [ $to_the_right -gt 0 ]; then
-        # TODO - we also need to enter here even if erm is less than dead_end if the first frame on the right
-        # needs to be closer to the deadzone.
+    if [ $images_right -gt 0 ]; then
+        echo Processing right side
         if [ $erm -lt $((dead_end + 1)) ]; then
-            if [ $erm -eq 0 ]; then
-                echo After image-dist left. step=$step
+            if [ $erm -ne 0 ]; then
+                echo "After left dist_images (frames $min_frame to $((dead_start - 1))) out of $min_frame to $max_frame. step=$step"
             fi
             erm=$((dead_end + 1))
         fi
-        echo Right dist_images $erm $end_frame $((right_start_image - move_right)) $end_image
-        dist_images $erm $end_frame $((right_start_image - move_right)) $end_image
-        if [ $move_left -eq 0 ] && [ $to_the_left -gt 0 ]; then
-            echo After dist_images right. step=$step
+        echo "Right dist_images: frames: $erm to $max_frame images: $right_start_image-$move_right to $max_image (within $min_frame to $max_frame run)"
+        dist_images $erm $max_frame $((right_start_image - move_right)) $max_image
+        if [ $move_left -eq 0 ] && [ $images_left -gt 0 ]; then
+            echo "After right dist_images (frames $erm to $max_frame) out of $min_frame to $max_frame. step=$step"
             erm=$(echo "($dead_end + 1 - $step + 0.5)/1" | bc)
-            echo Left dist_images start_frame=$start_frame erm=$erm start_image=$start_image left_end_image=$left_end_image move_left=$move_left
-            dist_images $erm $start_frame $((left_end_image + move_left)) $start_image
+            if [ $erm -gt $((dead_start - 1)) ]; then
+                erm=$((dead_start - 1))
+            fi
+            echo Left dist_images min_frame=$min_frame erm=$erm min_image=$min_image left_end_image=$left_end_image move_left=$move_left
+            dist_images $erm $min_frame $((left_end_image + move_left)) $min_image
         fi
     else
-        echo Apparently no need to call right dist_images. erm=$erm dead_end=$dead_end to_right=$to_the_right
+        echo Apparently no need to call right dist_images. erm=$erm dead_end=$dead_end images_right=$images_right
     fi
-    echo "For range final: $start_frame to $end_frame"
+    echo "For range final: $min_frame to $max_frame"
     echo "Selected frames: ${image[*]}"
+
+    # TODO - create livezone objects for each livezone and then summarise the density of each one at the end
+    # and test whether densities can be better equalised by moving images between zones
 }
 
 generate_montage() {
@@ -360,7 +354,7 @@ generate_montage() {
         OUT_FRAME="$TEMP/frame_$i.png"
         PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
         echo "Extracting frame $i ($PERCENT% of $what)$resizing"
-        if [ "$INTERACTIVE_MODE" = true ]; then
+        if [ "$SHOW_NUMBERS" = true ]; then
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         else
             ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
@@ -408,6 +402,7 @@ else
         case $choice in
             1) read -p "Enter start and end frames: " start end
                add_deadzone $start $end
+               image=()
                dist_images ;;
             2) read -p "Enter start and end frames: " start end
                dist_images -1
