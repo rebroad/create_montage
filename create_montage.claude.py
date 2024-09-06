@@ -120,7 +120,9 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         for i in range(start_image, end_image + direction, direction):
             frame = int(start_frame + ((i - start_image) * step) + 0.5)
             print(f"image={i} frame: {image[i]} -> {frame}")
-            # TODO - Could break out if frame is the same as image[i]
+            if image[i] == frame:
+                print("Skip the rest as numbers match.")
+                break
             image[i] = frame
             livezones[i] = zone_id
 
@@ -237,7 +239,7 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
         row_frames = image[row_start:row_end] if row % 2 == 0 else reversed(image[row_start:row_end])
         
         for i, frame_num in enumerate(row_frames, start=row_start):
-            out_frame = os.path.join(TEMP, f"frame_{i}.png")
+            out_frame = os.path.join(TEMP, f"frame_{frame_num}.png")
             percent = (i / (TOTAL_IMAGES - 1)) * 100
             print(f"Extracting frame {i} (frame {frame_num}, {percent:.2f}% of {what}){resizing}")
             filter = f"select=eq(n\\,{frame_num}){RESIZE}"
@@ -248,12 +250,15 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
                 if SHOW_ZONES:
                     text.append(f"Zone {livezones[i]}")
                 filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
+            inputs.extend(["-i", convert_path(out_frame)])
+            # TODO - skip extraction if file already exists
+            if os.path.exists(out_frame):
+                continue
             cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if not os.path.exists(out_frame):
                 print(f"Error: Failed to extract frame {i}. See {LOG}")
                 sys.exit(1)
-            inputs.extend(["-i", convert_path(out_frame)])
 
     if ROWS == 1:
         filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}hstack=inputs={TOTAL_IMAGES}[v]"
