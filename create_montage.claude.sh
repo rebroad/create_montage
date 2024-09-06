@@ -90,7 +90,6 @@ find_optimal_grid() {
     local target_rows=$1
     local target_cols=$2
     echo "Searching for optimal grid for $WIDTH:$HEIGHT aspect ratio"
-    # TODO - this can be optimized to skip most of the configs
     MIN_RATIO_DIFF=1000000
     start_y=1; end_y=$AVAILABLE_FRAMES; end_x=$AVAILABLE_FRAMES
     [ -n "$target_rows" ] && start_y=$target_rows && end_y=$target_rows
@@ -166,9 +165,6 @@ dist_images() {
     local start_image=${3:-0}
     local end_image=${4:-$((TOTAL_IMAGES - 1))}
     echo "Entering dist_images: frames=$start_frame-$end_frame images=$start_image-$end_image"
-
-    # TODO if start_image equals end_image, then choose a frame in the middle, UNLESS the current image is
-    # the first or the last frame of the video
 
     if [ $start_image -eq $end_image ]; then
         frame=${image[$start_image]}
@@ -302,7 +298,7 @@ dist_images() {
 
     echo Recurse into new livezones
     local erm=0
-    if [ $images_left -gt 0 ]; then # TODO - this is done after right dist_images so maybe only do if move_left>0
+    if [ $move_left -gt 0 ]; then
         echo Left dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
         step=""; dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
         if [ "$step" != "" ]; then
@@ -316,8 +312,6 @@ dist_images() {
     fi
     if [ $images_right -gt 0 ]; then
         echo Processing right side
-        # TODO - we also need to enter here even if erm is less than dead_end if the first frame on the right
-        # needs to be closer to the deadzone.
         if [ $erm -lt $((dead_end + 1)) ]; then
             if [ $erm -ne 0 ]; then
                 echo "After left dist_images (frames $min_frame to $((dead_start - 1))) out of $min_frame to $max_frame. step=$step"
@@ -340,6 +334,9 @@ dist_images() {
     fi
     echo "For range final: $min_frame to $max_frame"
     echo "Selected frames: ${image[*]}"
+
+    # TODO - create livezone objects for each livezone and then summarise the density of each one at the end
+    # and test whether densities can be better equalised by moving images between zones
 }
 
 generate_montage() {
