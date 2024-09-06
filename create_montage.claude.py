@@ -120,8 +120,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         for i in range(start_image, end_image + direction, direction):
             frame = int(start_frame + ((i - start_image) * step) + 0.5)
             print(f"image={i} frame: {image[i]} -> {frame}")
-            if i in image and frame == image[i]:
-                break
+            # TODO - Could break out if frame is the same as image[i]
             image[i] = frame
             livezones[i] = zone_id
 
