@@ -6,14 +6,6 @@ import subprocess
 import tempfile
 import shutil
 
-global step
-
-use_cygpath = False
-result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
-if "MSYS2" in result.stdout:
-    print("Detected Windows-native ffmpeg.")
-    use_cygpath = True
-
 def convert_path(path):
     global use_cygpath
     if use_cygpath:
@@ -97,15 +89,16 @@ def add_deadzone(start, end=None):
     load_deadzones()
 
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
-    global image, livezones, zone_id, step
-    ignore_deadzones = start_frame == -1
+    global image, step, iter
     start_frame = max(0, start_frame)
     if end_frame is None:
         end_frame = TOTAL_FRAMES - 1
     if end_image is None:
         end_image = TOTAL_IMAGES - 1
-    zone_id = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else zone_id + 1
-    print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} zone={zone_id}")
+    iter = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else iter + 1
+    if iter == 1:
+        image = [-1] * TOTAL_IMAGES
+    print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
 
     if start_image == end_image:
         frame = image[start_image]
@@ -126,13 +119,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 print("Skip the rest as numbers match.")
                 break
             image[i] = frame
-            livezones[i] = zone_id
 
     print(f"After dist frames: {' '.join(map(str, image))}")
-
-    if ignore_deadzones:
-        print(f"Ignoring deadzones = {ignore_deadzones}")
-        return
 
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
     print(f"Finding largest deadzone within frames {min_frame} to {max_frame}")
@@ -237,18 +225,15 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
 
     for i, frame_num in enumerate(image):
         out_frame = os.path.join(TEMP, f"frame_{frame_num}.png")
-        percent = (i / (TOTAL_IMAGES - 1)) * 100
+        percent = i / range_frames * 100
         print(f"Extracting frame {i} (frame {frame_num}, {percent:.2f}% of {what}){resizing}")
         filter = f"select=eq(n\\,{frame_num}){RESIZE}"
-        if SHOW_NUMBERS or SHOW_ZONES:
+        if SHOW_NUMBERS:
             text = []
             if SHOW_NUMBERS:
                 text.append(str(frame_num))
-            if SHOW_ZONES:
-                text.append(f"Zone {livezones[i]}")
             filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
         inputs.extend(["-i", convert_path(out_frame)])
-        # TODO - skip extraction if file already exists
         if os.path.exists(out_frame):
             continue
         cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
@@ -288,151 +273,152 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
         sys.exit(1)
 
 # Main execution
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n] [-z]")
-        sys.exit(1)
+if len(sys.argv) < 2:
+    print(f"Usage: {sys.argv[0]} <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n]")
+    sys.exit(1)
 
-    VID = None
-    ASPECT_RATIO = None
-    GRID = None
-    START_IMAGE = None
-    END_IMAGE = None
-    INTERACTIVE_MODE = False
-    SHOW_NUMBERS = False
-    SHOW_ZONES = False
+use_cygpath = False
+result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+if "MSYS2" in result.stdout:
+    print("Detected Windows-native ffmpeg.")
+    use_cygpath = True
 
-    for arg in sys.argv[1:]:
-        if arg.endswith('.mp4'):
-            VID = arg
-        elif ':' in arg:
-            ASPECT_RATIO = arg
-        elif 'x' in arg:
-            GRID = arg
-        elif arg == '-i':
-            INTERACTIVE_MODE = True
-        elif arg == '-n':
-            SHOW_NUMBERS = True
-        elif arg == '-z':
-            SHOW_ZONES = True
-        elif START_IMAGE is None:
-            START_IMAGE = arg
-        else:
-            END_IMAGE = arg
+VID = None
+ASPECT_RATIO = None
+GRID = None
+START_IMAGE = None
+END_IMAGE = None
+INTERACTIVE_MODE = False
+SHOW_NUMBERS = False
 
-    if VID is None:
-        print("Error: Video file not specified.")
-        sys.exit(1)
-    if not os.path.isfile(VID):
-        print(f"Error: Video file '{VID}' does not exist.")
-        sys.exit(1)
-
-    OUT = f"{os.path.splitext(VID)[0]}_montage.png"
-    DEADZONE_FILE = f"{os.path.splitext(VID)[0]}_deadzones.txt"
-
-    TEMP = tempfile.mkdtemp()
-    LOG = os.path.join(TEMP, "ffmpeg_log.log")
-
-    print(f"Determining video information for: {VID}")
-    cmd = [
-        "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", convert_path(VID)
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Error running ffprobe. Return code: {result.returncode}")
-        print(f"Error output: {result.stderr}")
-        sys.exit(1)
-
-    stdout = result.stdout.strip()
-    if not stdout:
-        print("Error: ffprobe didn't return any output.")
+for arg in sys.argv[1:]:
+    if arg.endswith('.mp4'):
+        VID = arg
+    elif ':' in arg:
+        ASPECT_RATIO = arg
+    elif 'x' in arg:
+        GRID = arg
+    elif arg == '-i':
+        INTERACTIVE_MODE = True
+    elif arg == '-n':
+        SHOW_NUMBERS = True
+    elif START_IMAGE is None:
+        START_IMAGE = arg
     else:
-        try:
-            TOTAL_FRAMES = int(stdout)
-        except ValueError:
-            print(f"Error: Unexpected output from ffprobe: '{stdout}'")
-            print("Unable to determine frame count. Please check if the video file is valid.")
-            sys.exit(1)
+        END_IMAGE = arg
 
-    print(f"Total frames determined: {TOTAL_FRAMES}")
+if VID is None:
+    print("Error: Video file not specified.")
+    sys.exit(1)
+if not os.path.isfile(VID):
+    print(f"Error: Video file '{VID}' does not exist.")
+    sys.exit(1)
 
-    if START_IMAGE:
-        DIM = get_dimensions(START_IMAGE)
-        SW, SH = map(int, DIM.split('x'))
-        RESIZE = f",scale={SW}:{SH}" if SW and SH else ""
-        FRAME_WIDTH, FRAME_HEIGHT = SW, SH
-    else:
-        DIM, RESIZE = get_dimensions(VID), ""
-        FRAME_WIDTH, FRAME_HEIGHT = map(int, DIM.split('x'))
-    print(f"Frame dimensions: {FRAME_WIDTH} by {FRAME_HEIGHT}")
+OUT = f"{os.path.splitext(VID)[0]}_montage.png"
+DEADZONE_FILE = f"{os.path.splitext(VID)[0]}_deadzones.txt"
 
-    if ASPECT_RATIO:
-        WIDTH, HEIGHT = map(int, ASPECT_RATIO.split(':'))
-    else:
-        WIDTH, HEIGHT = 16, 9
-    TARGET_RATIO = WIDTH / HEIGHT
-    print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
+TEMP = tempfile.mkdtemp()
+LOG = os.path.join(TEMP, "ffmpeg_log.log")
 
-    load_deadzones()
+print(f"Determining video information for: {VID}")
+cmd = [
+    "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+    "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", convert_path(VID)
+]
+result = subprocess.run(cmd, capture_output=True, text=True)
+if result.returncode != 0:
+    print(f"Error running ffprobe. Return code: {result.returncode}")
+    print(f"Error output: {result.stderr}")
+    sys.exit(1)
 
-    if GRID:
-        if GRID.endswith('x'):
-            find_optimal_grid(target_cols=int(GRID[:-1]))
-        elif GRID.startswith('x'):
-            find_optimal_grid(target_rows=int(GRID[1:]))
-        else:
-            COLS, ROWS = map(int, GRID.split('x'))
-    elif ASPECT_RATIO:
-        find_optimal_grid()
-    else:
-        print("No grid or aspect ratio specified. Using default 2 row grid.")
-        find_optimal_grid(target_rows=2)
-
-    print(f"Using grid: {COLS}x{ROWS}")
-    TOTAL_IMAGES = COLS * ROWS
-    if TOTAL_IMAGES < 2:
-        print("Error: The grid must allow for at least 2 images.")
-        sys.exit(1)
-    if TOTAL_IMAGES > TOTAL_FRAMES:
-        print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
+stdout = result.stdout.strip()
+if not stdout:
+    print("Error: ffprobe didn't return any output.")
+else:
+    try:
+        TOTAL_FRAMES = int(stdout)
+    except ValueError:
+        print(f"Error: Unexpected output from ffprobe: '{stdout}'")
+        print("Unable to determine frame count. Please check if the video file is valid.")
         sys.exit(1)
 
-    image = [-1] * TOTAL_IMAGES
-    livezones = [0] * TOTAL_IMAGES
-    zone_id = 0
+print(f"Total frames determined: {TOTAL_FRAMES}")
 
-    dist_images()
-    if not INTERACTIVE_MODE:
-        generate_montage(OUT)
+if START_IMAGE:
+    DIM = get_dimensions(START_IMAGE)
+    SW, SH = map(int, DIM.split('x'))
+    RESIZE = f",scale={SW}:{SH}" if SW and SH else ""
+    FRAME_WIDTH, FRAME_HEIGHT = SW, SH
+else:
+    DIM, RESIZE = get_dimensions(VID), ""
+    FRAME_WIDTH, FRAME_HEIGHT = map(int, DIM.split('x'))
+print(f"Frame dimensions: {FRAME_WIDTH} by {FRAME_HEIGHT}")
+
+if ASPECT_RATIO:
+    WIDTH, HEIGHT = map(int, ASPECT_RATIO.split(':'))
+else:
+    WIDTH, HEIGHT = 16, 9
+TARGET_RATIO = WIDTH / HEIGHT
+print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
+
+load_deadzones()
+
+if GRID:
+    if GRID.endswith('x'):
+        find_optimal_grid(target_cols=int(GRID[:-1]))
+    elif GRID.startswith('x'):
+        find_optimal_grid(target_rows=int(GRID[1:]))
     else:
-        while True:
-            print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
-            print("4. Show current deadzones  5. Exit")
-            choice = input("Enter your choice: ")
-            if choice == '1':
-                start, end = map(int, input("Enter start and end frames: ").split())
-                add_deadzone(start, end)
-                image = [-1] * TOTAL_IMAGES
-                dist_images()
-            elif choice == '2':
-                start, end = map(int, input("Enter start and end frames: ").split())
-                dist_images(-1)
-                generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end)
-                print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
-            elif choice == '3':
-                generate_montage(OUT)
-            elif choice == '4':
-                print("Current deadzones:")
-                if os.path.exists(DEADZONE_FILE):
-                    with open(DEADZONE_FILE, 'r') as f:
-                        print(f.read())
-                else:
-                    print("No deadzones defined.")
-            elif choice == '5':
-                break
+        COLS, ROWS = map(int, GRID.split('x'))
+elif ASPECT_RATIO:
+    find_optimal_grid()
+else:
+    print("No grid or aspect ratio specified. Using default 2 row grid.")
+    find_optimal_grid(target_rows=2)
+
+print(f"Using grid: {COLS}x{ROWS}")
+TOTAL_IMAGES = COLS * ROWS
+if TOTAL_IMAGES < 2:
+    print("Error: The grid must allow for at least 2 images.")
+    sys.exit(1)
+if TOTAL_IMAGES > TOTAL_FRAMES:
+    print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
+    sys.exit(1)
+
+dist_images()
+if not INTERACTIVE_MODE:
+    generate_montage(OUT)
+else:
+    while True:
+        print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
+        print("4. Show current deadzones  5. Exit")
+        choice = input("Enter your choice: ")
+        if choice == '1':
+            start, end = map(int, input("Enter start and end frames: ").split())
+            add_deadzone(start, end)
+            dist_images()
+        elif choice == '2':
+            # TODO - avoid changing global variables in this section
+            start, end = map(int, input("Enter start and end frames: ").split())
+            find_optimal_grid(end - start + 1)
+            TOTAL_IMAGES = COLS * ROWS
+            step = (end - start) / (TOTAL_IMAGES - 1)
+            image = [int(start_frame + (i * step) + 0.5) for i in range(num_images)]
+            generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end)
+            print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
+        elif choice == '3':
+            generate_montage(OUT)
+        elif choice == '4':
+            print("Current deadzones:")
+            if os.path.exists(DEADZONE_FILE):
+                with open(DEADZONE_FILE, 'r') as f:
+                    print(f.read())
             else:
-                print("Invalid choice")
+                print("No deadzones defined.")
+        elif choice == '5':
+            break
+        else:
+            print("Invalid choice")
 
-    shutil.rmtree(TEMP)
-    print(f"Temporary files deleted. Log file: {LOG}")
+shutil.rmtree(TEMP)
+print(f"Temporary files deleted. Log file: {LOG}")
