@@ -1,14 +1,16 @@
 #!/bin/python
 
+import os
+import sys
 import subprocess
-import re
+import tempfile
+import shutil
 
-use_cygpath = false
-try:
-    result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
-    if "MSYS2" in result.stdout:
-        print("Detected Windows-native ffmpeg.")
-        use_cygpath = true
+use_cygpath = False
+result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+if "MSYS2" in result.stdout:
+    print("Detected Windows-native ffmpeg.")
+    use_cygpath = True
 
 def convert_path(path):
     global use_cygpath
