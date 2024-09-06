@@ -214,24 +214,30 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
     inputs = []
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
-    for i, frame_num in enumerate(image):
-        out_frame = os.path.join(TEMP, f"frame_{i}.png")
-        percent = (frame_num - start_frame) * 100 / range_frames
-        print(f"Extracting frame {i} ({percent:.2f}% of {what}){resizing}")
-        filter = f"select=eq(n\\,{frame_num}){RESIZE}"
-        if SHOW_NUMBERS or SHOW_ZONES:
-            text = []
-            if SHOW_NUMBERS:
-                text.append(str(frame_num))
-            if SHOW_ZONES:
-                text.append(f"Zone {livezones[i]}")
-            filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
-        cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", VID, "-vf", filter, "-vsync", "vfr", out_frame]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if not os.path.exists(out_frame):
-            print(f"Error: Failed to extract frame {i}. See {LOG}")
-            sys.exit(1)
-        inputs.extend(["-i", out_frame])
+
+    for row in range(ROWS):
+        row_start = row * COLS
+        row_end = row_start + COLS
+        row_frames = image[row_start:row_end] if row % 2 == 0 else reversed(image[row_start:row_end])
+
+        for i, frame_num in enumerate(row_frames, start=row_start):
+            out_frame = os.path.join(TEMP, f"frame_{i}.png")
+            percent = (frame_num - start_frame) * 100 / range_frames
+            print(f"Extracting frame {i} ({percent:.2f}% of {what}){resizing}")
+            filter = f"select=eq(n\\,{frame_num}){RESIZE}"
+            if SHOW_NUMBERS or SHOW_ZONES:
+                text = []
+                if SHOW_NUMBERS:
+                    text.append(str(frame_num))
+                if SHOW_ZONES:
+                    text.append(f"Zone {livezones[i]}")
+                filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
+            cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", VID, "-vf", filter, "-vsync", "vfr", out_frame]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if not os.path.exists(out_frame):
+                print(f"Error: Failed to extract frame {i}. See {LOG}")
+                sys.exit(1)
+            inputs.extend(["-i", out_frame])
 
     filter = (
         "[" + ":v][".join(map(str, range(TOTAL_IMAGES))) + ":v]" +
@@ -367,7 +373,7 @@ if __name__ == "__main__":
         print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
         sys.exit(1)
 
-    image = [0] * TOTAL_IMAGES
+    image = [-1] * TOTAL_IMAGES
     livezones = [0] * TOTAL_IMAGES
     zone_id = 0
 
@@ -382,7 +388,7 @@ if __name__ == "__main__":
             if choice == '1':
                 start, end = map(int, input("Enter start and end frames: ").split())
                 add_deadzone(start, end)
-                image = [0] * TOTAL_IMAGES
+                image = [-1] * TOTAL_IMAGES
                 dist_images()
             elif choice == '2':
                 start, end = map(int, input("Enter start and end frames: ").split())
