@@ -101,19 +101,19 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             print(f"Placing image {start_frame} in center of {start_frame}:{end_frame} at frame={image[start_image]}")
         else:
             print(f"Keep image {start_image} at its current position ({image[start_image]}) as it's special.")
-        direction = 0
     else:
         direction = 1 if end_image > start_image else -1
         step = (end_frame - start_frame) / (end_image - start_image)
         print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.6f}")
 
-    for i in range(start_image, end_image + direction, direction):
-        frame = int(start_frame + ((i - start_image) * step) + 0.5)
-        print(f"image={i} frame: {image[i]} -> {frame}")
-        if i in image and frame == image[i]:
-            break
-        image[i] = frame
-        livezones[i] = zone_id
+        for i in range(start_image, end_image + direction, direction):
+            frame = int(start_frame + ((i - start_image) * step) + 0.5)
+            print(f"image={i} frame: {image[i]} -> {frame}")
+            if i in image and frame == image[i]:
+                break
+            image[i] = frame
+            livezones[i] = zone_id
+
     print(f"After dist frames: {' '.join(map(str, image))}")
 
     if ignore_deadzones:
@@ -252,12 +252,16 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
                 sys.exit(1)
             inputs.extend(["-i", convert_path(out_frame)])
 
-    filter = (
-        "[" + ":v][".join(map(str, range(TOTAL_IMAGES))) + ":v]" +
-        (f"hstack=inputs={TOTAL_IMAGES}" if ROWS == 1 else
-         f"vstack=inputs={TOTAL_IMAGES}" if COLS == 1 else
-         f"{''.join(f'[{r*COLS}:v]' + '[' + ']:v]['.join(map(str, range(r*COLS+1, (r+1)*COLS))) + f':v]hstack=inputs={COLS}[row{r}];' for r in range(ROWS))}[{''.join(f'row{r}' for r in range(ROWS))}]vstack=inputs={ROWS}")
-    ) + "[v]"
+    if ROWS == 1:
+        filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}hstack=inputs={TOTAL_IMAGES}[v]"
+    elif COLS == 1:
+        filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}vstack=inputs={TOTAL_IMAGES}[v]"
+    else:
+        filter = ""
+        for r in range(ROWS):
+            row_inputs = ''.join(f'[{i}:v]' for i in range(r*COLS, (r+1)*COLS))
+            filter += f"{row_inputs}hstack=inputs={COLS}[row{r}];"
+        filter += f"{''.join(f'[row{r}]' for r in range(ROWS))}vstack=inputs={ROWS}[v]"
 
     print("Creating montage...")
     print(f"Filter complex: {filter}")
