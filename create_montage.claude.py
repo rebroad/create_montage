@@ -1,3 +1,5 @@
+#!/bin/python
+
 import os
 import sys
 import subprocess
@@ -5,19 +7,26 @@ import tempfile
 import shutil
 import math
 
-def trim(s):
-    return s.strip()
-
 def convert_path(path):
-    return path  # This function is a no-op in Python, as it's not needed
+    if sys.platform == 'win32' or 'cygwin' in sys.platform:
+        try:
+            return subprocess.check_output(['cygpath', '-w', path]).strip().decode('utf-8')
+        except subprocess.CalledProcessError:
+            return path
+    return path
 
 def get_dimensions(file_path):
     cmd = [
         "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", file_path
+        "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", convert_path(file_path)
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.stdout.strip()
+    dimensions = result.stdout.strip()
+    if not dimensions:
+        print(f"Error: Unable to get dimensions for {file_path}")
+        print(f"ffprobe output: {result.stderr}")
+        sys.exit(1)
+    return dimensions
 
 def load_deadzones():
     global AVAILABLE_FRAMES, deadzones
@@ -60,13 +69,7 @@ def find_optimal_grid(target_rows=None, target_cols=None):
 def add_deadzone(start, end=None):
     global deadzones
     end = end or start
-    with open(DEADZONE_FILE, 'a') as f:
-        f.write(f"{start}:{end}\n")
-    deadzones = []
-    with open(DEADZONE_FILE, 'r') as f:
-        for line in f:
-            start, end = map(int, line.strip().split(':'))
-            deadzones.append((start, end))
+    deadzones.append((start, end))
     deadzones.sort()
     merged = []
     for start, end in deadzones:
@@ -90,15 +93,12 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         ignore_deadzones = True
     end_frame = end_frame or TOTAL_FRAMES - 1
     end_image = end_image or TOTAL_IMAGES - 1
-    if start_frame == 0 and end_frame == TOTAL_FRAMES - 1:
-        zone_id = 1
-    else:
-        zone_id += 1
+    zone_id = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else zone_id + 1
     print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} zone={zone_id}")
 
     if start_image == end_image:
         frame = image[start_image]
-        if frame != 0 and frame != TOTAL_FRAMES - 1:
+        if 0 < frame < TOTAL_FRAMES - 1:
             image[start_image] = (start_frame + end_frame) // 2
             print(f"Placing image {start_frame} in center of {start_frame}:{end_frame} at frame={image[start_image]}")
         else:
@@ -122,34 +122,25 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print(f"Ignoring deadzones = {ignore_deadzones}")
         return
 
-    max_size = 0
-    closest_to_center = 0
+    min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
     center = (start_frame + end_frame) // 2
+    best_deadzone = max(
+        ((dead_start, dead_end) for dead_start, dead_end in deadzones if min_frame <= dead_end and dead_start <= max_frame),
+        key=lambda x: (x[1] - x[0] + 1, -abs((x[0] + x[1]) // 2 - center)),
+        default=None
+    )
 
-    min_frame = min(start_frame, end_frame)
-    max_frame = max(start_frame, end_frame)
-
-    print(f"Finding largest deadzone within frames {min_frame} to {max_frame}")
-    for dead_start, dead_end in deadzones:
-        if dead_end < min_frame or dead_start > max_frame:
-            continue
-        size = dead_end - dead_start + 1
-        midpoint = (dead_start + dead_end) // 2
-        dist_from_center = midpoint - center
-        best_dist_from_center = closest_to_center - center
-        if size > max_size or (size == max_size and abs(dist_from_center) < abs(best_dist_from_center)):
-            max_size = size
-            closest_to_center = midpoint
-            best_dead_start, best_dead_end = dead_start, dead_end
-
-    if max_size == 0:
+    if not best_deadzone:
         print(f"No deadzones within frames {min_frame} to {max_frame}")
         return
+
+    best_dead_start, best_dead_end = best_deadzone
+    print(f"Processing deadzone: {best_dead_start}:{best_dead_end}")
 
     dead_images = 0
     images_left = 0
     images_right = 0
-    print(f"Processing deadzone: {best_dead_start}:{best_dead_end}")
+
     min_image = min(start_image, end_image)
     max_image = max(start_image, end_image)
     for i in range(min_image, max_image + 1):
@@ -183,11 +174,9 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         move_left = best_move_left
         move_right = dead_images - move_left
     elif spaces_left > 0:
-        move_left = dead_images
-        move_right = 0
+        move_left, move_right = dead_images, 0
     elif spaces_right > 0:
-        move_left = 0
-        move_right = dead_images
+        move_left, move_right = 0, dead_images
     else:
         print("No adjacent spaces to move dead images to - need more algorithm!")
         sys.exit(1)
@@ -245,19 +234,12 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
             sys.exit(1)
         inputs.extend(["-i", out_frame])
 
-    if ROWS == 1:
-        filter = "[" + ":v][".join(map(str, range(TOTAL_IMAGES))) + ":v]"
-        filter += f"hstack=inputs={TOTAL_IMAGES}[v]"
-    elif COLS == 1:
-        filter = "[" + ":v][".join(map(str, range(TOTAL_IMAGES))) + ":v]"
-        filter += f"vstack=inputs={TOTAL_IMAGES}[v]"
-    else:
-        filter = ""
-        for r in range(ROWS):
-            filter += "[" + ":v][".join(map(str, range(r*COLS, (r+1)*COLS))) + ":v]"
-            filter += f"hstack=inputs={COLS}[row{r}];"
-        filter += "[" + "][".join(f"row{r}" for r in range(ROWS)) + "]"
-        filter += f"vstack=inputs={ROWS}[v]"
+    filter = (
+        "[" + ":v][".join(map(str, range(TOTAL_IMAGES))) + ":v]" +
+        (f"hstack=inputs={TOTAL_IMAGES}" if ROWS == 1 else
+         f"vstack=inputs={TOTAL_IMAGES}" if COLS == 1 else
+         f"{''.join(f'[{r*COLS}:v]' + '[' + ']:v]['.join(map(str, range(r*COLS+1, (r+1)*COLS))) + f':v]hstack=inputs={COLS}[row{r}];' for r in range(ROWS))}[{''.join(f'row{r}' for r in range(ROWS))}]vstack=inputs={ROWS}")
+    ) + "[v]"
 
     print("Creating montage...")
     print(f"Filter complex: {filter}")
@@ -324,10 +306,25 @@ if __name__ == "__main__":
     print(f"Determining video information for: {VID}")
     cmd = [
         "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", VID
+        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", convert_path(VID)
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    TOTAL_FRAMES = int(result.stdout.strip())
+    if result.returncode != 0:
+        print(f"Error running ffprobe. Return code: {result.returncode}")
+        print(f"Error output: {result.stderr}")
+        sys.exit(1)
+
+    stdout = result.stdout.strip()
+    if not stdout:
+        print("Error: ffprobe didn't return any output.")
+    else:
+        try:
+            TOTAL_FRAMES = int(stdout)
+        except ValueError:
+            print(f"Error: Unexpected output from ffprobe: '{stdout}'")
+            print("Unable to determine frame count. Please check if the video file is valid.")
+            sys.exit(1)
+
     print(f"Total frames determined: {TOTAL_FRAMES}")
 
     if START_IMAGE:
