@@ -49,18 +49,20 @@ def load_deadzones():
                 print(f"DEBUG: Added deadzone {start}:{end}")
     print(f"Total available frames (excluding deadzones): {AVAILABLE_FRAMES}")
 
-def find_optimal_grid(target_rows=None, target_cols=None):
+def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None):
     global COLS, ROWS
+    if available_frames is None:
+        available_frames = AVAILABLE_FRAMES
     print(f"Searching for optimal grid for {WIDTH}:{HEIGHT} aspect ratio")
     MIN_RATIO_DIFF = float('inf')
     TARGET_RATIO = WIDTH / HEIGHT
-    start_y, end_y = (target_rows, target_rows) if target_rows else (1, AVAILABLE_FRAMES)
+    start_y, end_y = (target_rows, target_rows) if target_rows else (1, available_frames)
     for y in range(start_y, end_y + 1):
         LAST_X_DIFF = float('inf')
         start_x = int((y * TARGET_RATIO * FRAME_HEIGHT) / FRAME_WIDTH)
-        if start_x * y > AVAILABLE_FRAMES:
+        if start_x * y > available_frames:
             break
-        end_x = target_cols if target_cols else AVAILABLE_FRAMES // y
+        end_x = target_cols if target_cols else available_frames // y
         for x in range(start_x, end_x + 1):
             GRID_RATIO = (x * FRAME_WIDTH) / (y * FRAME_HEIGHT)
             RATIO_DIFF = (GRID_RATIO - TARGET_RATIO) ** 2
@@ -233,32 +235,27 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
 
-    for row in range(ROWS):
-        row_start = row * COLS
-        row_end = row_start + COLS
-        row_frames = image[row_start:row_end] if row % 2 == 0 else reversed(image[row_start:row_end])
-        
-        for i, frame_num in enumerate(row_frames, start=row_start):
-            out_frame = os.path.join(TEMP, f"frame_{frame_num}.png")
-            percent = (i / (TOTAL_IMAGES - 1)) * 100
-            print(f"Extracting frame {i} (frame {frame_num}, {percent:.2f}% of {what}){resizing}")
-            filter = f"select=eq(n\\,{frame_num}){RESIZE}"
-            if SHOW_NUMBERS or SHOW_ZONES:
-                text = []
-                if SHOW_NUMBERS:
-                    text.append(str(frame_num))
-                if SHOW_ZONES:
-                    text.append(f"Zone {livezones[i]}")
-                filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
-            inputs.extend(["-i", convert_path(out_frame)])
-            # TODO - skip extraction if file already exists
-            if os.path.exists(out_frame):
-                continue
-            cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-            if not os.path.exists(out_frame):
-                print(f"Error: Failed to extract frame {i}. See {LOG}")
-                sys.exit(1)
+    for i, frame_num in enumerate(image):
+        out_frame = os.path.join(TEMP, f"frame_{frame_num}.png")
+        percent = (i / (TOTAL_IMAGES - 1)) * 100
+        print(f"Extracting frame {i} (frame {frame_num}, {percent:.2f}% of {what}){resizing}")
+        filter = f"select=eq(n\\,{frame_num}){RESIZE}"
+        if SHOW_NUMBERS or SHOW_ZONES:
+            text = []
+            if SHOW_NUMBERS:
+                text.append(str(frame_num))
+            if SHOW_ZONES:
+                text.append(f"Zone {livezones[i]}")
+            filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
+        inputs.extend(["-i", convert_path(out_frame)])
+        # TODO - skip extraction if file already exists
+        if os.path.exists(out_frame):
+            continue
+        cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        if not os.path.exists(out_frame):
+            print(f"Error: Failed to extract frame {i}. See {LOG}")
+            sys.exit(1)
 
     if ROWS == 1:
         filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}hstack=inputs={TOTAL_IMAGES}[v]"
@@ -268,7 +265,10 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
         filter = ""
         for r in range(ROWS):
             row_inputs = ''.join(f'[{i}:v]' for i in range(r*COLS, (r+1)*COLS))
-            filter += f"{row_inputs}hstack=inputs={COLS}[row{r}];"
+            if r % 2 == 0:
+                filter += f"{row_inputs}hstack=inputs={COLS}[row{r}];"
+            else:
+                filter += f"{row_inputs}hstack=inputs={COLS},hflip[row{r}];"
         filter += f"{''.join(f'[row{r}]' for r in range(ROWS))}vstack=inputs={ROWS}[v]"
 
     print("Creating montage...")
