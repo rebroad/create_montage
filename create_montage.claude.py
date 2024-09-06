@@ -355,8 +355,8 @@ if __name__ == "__main__":
     elif ASPECT_RATIO:
         find_optimal_grid()
     else:
-        print("No grid or aspect ratio specified. Using default 3 row grid.")
-        find_optimal_grid(target_rows=3)
+        print("No grid or aspect ratio specified. Using default 2 row grid.")
+        find_optimal_grid(target_rows=2)
 
     print(f"Using grid: {COLS}x{ROWS}")
     TOTAL_IMAGES = COLS * ROWS

@@ -133,8 +133,8 @@ if [ -n "$GRID" ]; then
 elif [ -n "$ASPECT_RATIO" ]; then
     find_optimal_grid
 else
-    echo "No grid or aspect ratio specified. Using default 3 row grid."
-    find_optimal_grid 3
+    echo "No grid or aspect ratio specified. Using default 2 row grid."
+    find_optimal_grid 2
 fi
 
 echo "Using grid: ${COLS}x${ROWS}"
