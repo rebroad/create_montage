@@ -245,7 +245,7 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
                 if SHOW_ZONES:
                     text.append(f"Zone {livezones[i]}")
                 filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
-            cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", VID, "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
+            cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if not os.path.exists(out_frame):
                 print(f"Error: Failed to extract frame {i}. See {LOG}")
