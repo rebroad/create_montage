@@ -338,7 +338,7 @@ if __name__ == "__main__":
         RESIZE = f",scale={SW}:{SH}" if SW and SH else ""
         FRAME_WIDTH, FRAME_HEIGHT = SW, SH
     else:
-        DIM = get_dimensions(VID)
+        DIM, RESIZE = get_dimensions(VID), ""
         FRAME_WIDTH, FRAME_HEIGHT = map(int, DIM.split('x'))
     print(f"Frame dimensions: {FRAME_WIDTH} by {FRAME_HEIGHT}")
 
