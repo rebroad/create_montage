@@ -122,8 +122,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print(f"Ignoring deadzones = {ignore_deadzones}")
         return
 
-    print(f"Finding largest deadzone within frames {start_frame} to {end_frame}")
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
+    print(f"Finding largest deadzone within frames {min_frame} to {max_frame}")
     center = (start_frame + end_frame) // 2
     best_deadzone = max(
         ((dead_start, dead_end) for dead_start, dead_end in deadzones if min_frame <= dead_end and dead_start <= max_frame),
