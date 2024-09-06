@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import shutil
 
+global step
+
 use_cygpath = False
 result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
 if "MSYS2" in result.stdout:
@@ -93,7 +95,7 @@ def add_deadzone(start, end=None):
     load_deadzones()
 
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
-    global image, livezones, zone_id
+    global image, livezones, zone_id, step
     ignore_deadzones = start_frame == -1
     start_frame = max(0, start_frame)
     if end_frame is None:
@@ -107,7 +109,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         frame = image[start_image]
         if 0 < frame < TOTAL_FRAMES - 1:
             image[start_image] = (start_frame + end_frame) // 2
-            print(f"Placing image {start_frame} in center of {start_frame}:{end_frame} at frame={image[start_image]}")
+            print(f"Placing image {start_image} in center of {start_frame}:{end_frame} at frame={image[start_image]}")
         else:
             print(f"Keep image {start_image} at its current position ({image[start_image]}) as it's special.")
     else:
@@ -195,7 +197,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     erm = 0
     if move_left > 0:
         print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
-        step = dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
+        dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
         if step:
             erm = int(dead_start - 1 + step + 0.5)
             print(f"After Left dist_images step={step} erm={erm}")
@@ -210,7 +212,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step}")
             erm = dead_end + 1
         print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
-        step = dist_images(erm, max_frame, right_start_image - move_right, max_image)
+        dist_images(erm, max_frame, right_start_image - move_right, max_image)
         if move_left == 0 and images_left > 0:
             print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
             erm = min(dead_start - 1, int(dead_end + 1 - step + 0.5))
@@ -223,8 +225,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"For range final: {min_frame} to {max_frame}")
     print(f"Selected frames: {' '.join(map(str, image))}")
 
-    return step if 'step' in locals() else None
-
 def generate_montage(output_file, start_frame=0, end_frame=None):
     end_frame = end_frame or TOTAL_FRAMES - 1
     range_frames = end_frame - start_frame
@@ -236,11 +236,11 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
         row_start = row * COLS
         row_end = row_start + COLS
         row_frames = image[row_start:row_end] if row % 2 == 0 else reversed(image[row_start:row_end])
-
+        
         for i, frame_num in enumerate(row_frames, start=row_start):
             out_frame = os.path.join(TEMP, f"frame_{i}.png")
-            percent = (frame_num - start_frame) * 100 / range_frames
-            print(f"Extracting frame {i} ({percent:.2f}% of {what}){resizing}")
+            percent = (i / (TOTAL_IMAGES - 1)) * 100
+            print(f"Extracting frame {i} (frame {frame_num}, {percent:.2f}% of {what}){resizing}")
             filter = f"select=eq(n\\,{frame_num}){RESIZE}"
             if SHOW_NUMBERS or SHOW_ZONES:
                 text = []
