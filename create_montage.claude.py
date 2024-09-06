@@ -1,14 +1,18 @@
 #!/bin/python
 
-import os
-import sys
 import subprocess
-import tempfile
-import shutil
-import math
+import re
+
+use_cygpath = false
+try:
+    result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+    if "MSYS2" in result.stdout:
+        print("Detected Windows-native ffmpeg.")
+        use_cygpath = true
 
 def convert_path(path):
-    if sys.platform == 'win32' or 'cygwin' in sys.platform:
+    global use_cygpath
+    if use_cygpath:
         try:
             return subprocess.check_output(['cygpath', '-w', path]).strip().decode('utf-8')
         except subprocess.CalledProcessError:
@@ -38,6 +42,7 @@ def load_deadzones():
                 start, end = map(int, line.strip().split(':'))
                 AVAILABLE_FRAMES -= (end - start + 1)
                 deadzones.append((start, end))
+                print(f"DEBUG: Added deadzone {start}:{end}")
     print(f"Total available frames (excluding deadzones): {AVAILABLE_FRAMES}")
 
 def find_optimal_grid(target_rows=None, target_cols=None):
@@ -135,8 +140,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print(f"No deadzones within frames {min_frame} to {max_frame}")
         return
 
-    best_dead_start, best_dead_end = best_deadzone
-    print(f"Processing deadzone: {best_dead_start}:{best_dead_end}")
+    dead_start, dead_end = best_deadzone
+    print(f"Processing deadzone: {dead_start}:{dead_end}")
 
     dead_images = 0
     images_left = 0
@@ -145,21 +150,21 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     min_image = min(start_image, end_image)
     max_image = max(start_image, end_image)
     for i in range(min_image, max_image + 1):
-        if image[i] < best_dead_start:
+        if image[i] < dead_start:
             images_left += 1
             left_end_image = i
-        elif best_dead_start <= image[i] <= best_dead_end:
+        elif dead_start <= image[i] <= dead_end:
             dead_images += 1
             right_start_image = i + 1
-        elif image[i] > best_dead_end:
+        elif image[i] > dead_end:
             images_right += 1
     print(f"dead_images={dead_images} images_on_left={images_left} images_on_right={images_right}")
     if dead_images == 0:
         return
 
-    print(f"livezones: left: {min_frame}:{best_dead_start - 1} right: {best_dead_end + 1}:{max_frame}")
-    spaces_left = best_dead_start - min_frame
-    spaces_right = max_frame - best_dead_end
+    print(f"livezones: left: {min_frame}:{dead_start - 1} right: {dead_end + 1}:{max_frame}")
+    spaces_left = dead_start - min_frame
+    spaces_right = max_frame - dead_end
     best_diff = float('inf')
     best_move_left = 0
 
@@ -187,33 +192,36 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print("Recurse into new livezones")
     erm = 0
     if move_left > 0:
-        print(f"Left dist_images {best_dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
-        dist_images(best_dead_start - 1, min_frame, left_end_image + move_left, min_image)
-        erm = best_dead_start - 1
+        print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
+        step = dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
+        if step:
+            erm = int(dead_start - 1 + step + 0.5)
+            print(f"After Left dist_images step={step} erm={erm}")
+        else:
+            print("step was blank so erm stays zero")
     else:
         print("No left side to process")
     if images_right > 0:
         print("Processing right side")
-        if erm < best_dead_end + 1:
+        if erm < dead_end + 1:
             if erm != 0:
-                print(f"After left dist_images (frames {min_frame} to {best_dead_start - 1}) out of {min_frame} to {max_frame}.")
-            erm = best_dead_end + 1
+                print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step}")
+            erm = dead_end + 1
         print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
-        dist_images(erm, max_frame, right_start_image - move_right, max_image)
+        step = dist_images(erm, max_frame, right_start_image - move_right, max_image)
         if move_left == 0 and images_left > 0:
-            print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}.")
-            erm = min(best_dead_start - 1, best_dead_end + 1)
+            print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
+            erm = min(dead_start - 1, int(dead_end + 1 - step + 0.5))
             print(f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
-        print(f"Apparently no need to call right dist_images. erm={erm} dead_end={best_dead_end} images_right={images_right}")
+        print(f"Apparently no need to call right dist_images. erm={erm} dead_end={dead_end} images_right={images_right}")
     print(f"Exiting frame_dist for range: {min_frame} to {max_frame}")
 
-def which(program):
-    path = shutil.which(program)
-    if path:
-        return path
-    return None
+    print(f"For range final: {min_frame} to {max_frame}")
+    print(f"Selected frames: {' '.join(map(str, image))}")
+
+    return step if 'step' in locals() else None
 
 def generate_montage(output_file, start_frame=0, end_frame=None):
     end_frame = end_frame or TOTAL_FRAMES - 1
@@ -221,13 +229,6 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
     inputs = []
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
-
-    ffmpeg_path = which('ffmpeg')
-    if not ffmpeg_path:
-        print("Error: ffmpeg not found in PATH. Please install ffmpeg or add it to your PATH.")
-        sys.exit(1)
-
-    print(f"Using ffmpeg from: {ffmpeg_path}")
 
     for row in range(ROWS):
         row_start = row * COLS
