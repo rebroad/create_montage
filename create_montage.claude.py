@@ -208,12 +208,25 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"For range final: {min_frame} to {max_frame}")
     print(f"Selected frames: {image}")
 
+def which(program):
+    path = shutil.which(program)
+    if path:
+        return path
+    return None
+
 def generate_montage(output_file, start_frame=0, end_frame=None):
     end_frame = end_frame or TOTAL_FRAMES - 1
     range_frames = end_frame - start_frame
     inputs = []
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
+
+    ffmpeg_path = which('ffmpeg')
+    if not ffmpeg_path:
+        print("Error: ffmpeg not found in PATH. Please install ffmpeg or add it to your PATH.")
+        sys.exit(1)
+
+    print(f"Using ffmpeg from: {ffmpeg_path}")
 
     for row in range(ROWS):
         row_start = row * COLS
@@ -232,12 +245,12 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
                 if SHOW_ZONES:
                     text.append(f"Zone {livezones[i]}")
                 filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
-            cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", VID, "-vf", filter, "-vsync", "vfr", out_frame]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", VID, "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if not os.path.exists(out_frame):
                 print(f"Error: Failed to extract frame {i}. See {LOG}")
                 sys.exit(1)
-            inputs.extend(["-i", out_frame])
+            inputs.extend(["-i", convert_path(out_frame)])
 
     filter = (
         "[" + ":v][".join(map(str, range(TOTAL_IMAGES))) + ":v]" +
@@ -251,7 +264,7 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
 
     os.environ['FONTCONFIG_FILE'] = "/dev/null"
 
-    cmd = ["ffmpeg", "-loglevel", "error", "-y"] + inputs + ["-filter_complex", filter, "-map", "[v]", output_file]
+    cmd = ["ffmpeg", "-loglevel", "error", "-y"] + inputs + ["-filter_complex", filter, "-map", "[v]", convert_path(output_file)]
     result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     if result.returncode == 0 and os.path.exists(output_file):
         print(f"Montage saved as {output_file}")
