@@ -192,7 +192,7 @@ dist_images() {
     # Distribute the images evenly among these frames
     for ((i=start_image; i!=end_image+direction; i+=direction)); do
         frame=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
-        echo image=$i frame: ${image[$i]} -> $frame
+        echo "image=$i frame: ${image[$i]} -> $frame"
         if [ -n "${image[$i]}" ] && [ $frame -eq "${image[$i]}" ]; then
             break
         fi

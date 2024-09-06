@@ -85,12 +85,14 @@ def add_deadzone(start, end=None):
         print(f.read())
     load_deadzones()
 
-def dist_images(start_frame, end_frame, start_image, end_image):
+def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     global image, livezones, zone_id
     ignore_deadzones = start_frame == -1
     start_frame = max(0, start_frame)
-    end_frame = end_frame or TOTAL_FRAMES - 1
-    end_image = end_image or TOTAL_IMAGES - 1
+    if end_frame is None:
+        end_frame = TOTAL_FRAMES - 1
+    if end_image is None:
+        end_image = TOTAL_IMAGES - 1
     zone_id = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else zone_id + 1
     print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} zone={zone_id}")
 
