@@ -1,6 +1,6 @@
 #!/bin/bash
 
-[ "$#" -lt 1 ] && { echo "Usage: $0 <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i]"; exit 1; }
+[ "$#" -lt 1 ] && { echo "Usage: $0 <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n] [-z]"; exit 1; }
 
 TEMP="/tmp/temp_frames_$$"
 LOG="/tmp/ffmpeg_log_$$.log"
@@ -8,6 +8,7 @@ mkdir -p "$TEMP" && : > "$LOG"
 
 INTERACTIVE_MODE=false
 SHOW_NUMBERS=false
+SHOW_ZONES=false
 
 for arg; do
     case "$arg" in
@@ -16,6 +17,7 @@ for arg; do
         *x*) GRID="$arg" ;;
         -i) INTERACTIVE_MODE=true ;;
         -n) SHOW_NUMBERS=true ;;
+        -z) SHOW_ZONES=true ;;
         *) [ -z "$START_IMAGE" ] && START_IMAGE="$arg" || END_IMAGE="$arg" ;;
     esac
 done
@@ -157,6 +159,7 @@ add_deadzone() {
 
 dist_images() {
     local start_frame=${1:-0}
+    local ignore_deadzones=""
     if [ $start_frame -eq -1 ]; then
         start_frame=0
         ignore_deadzones=1
@@ -164,7 +167,12 @@ dist_images() {
     local end_frame=${2:-$((TOTAL_FRAMES - 1))}
     local start_image=${3:-0}
     local end_image=${4:-$((TOTAL_IMAGES - 1))}
-    echo "Entering dist_images: frames=$start_frame-$end_frame images=$start_image-$end_image"
+    if [ $start_frame -eq 0 ] && [ $end_frame -eq $((TOTAL_FRAMES - 1)) ]; then
+        zone_id=1
+    else
+        zone_id=$((zone_id + 1))
+    fi
+    echo "Entering dist_images: frames=$start_frame-$end_frame images=$start_image-$end_image zone=$zone_id"
 
     if [ $start_image -eq $end_image ]; then
         frame=${image[$start_image]}
@@ -172,20 +180,16 @@ dist_images() {
             image[$start_image]=$(( (start_frame + end_frame) / 2))
             echo "Placing image $start_frame in center of $start_frame:$end_frame at frame=${image[$start_image]}"
         else
-            echo "Keep image $start_image at it's current position (${image[$start_image]}) as it's special."
+            echo "Keep image $start_image at its current position (${image[$start_image]}) as it's special."
         fi
         direction=0
     else
-        if [ $end_image -lt $start_image ]; then
-            direction=-1
-        else
-            direction=1
-        fi
+        direction=$((end_image > start_image ? 1 : -1))
         step=$(echo "scale=6; ($end_frame - $start_frame) / ($end_image - $start_image)" | bc)
         echo Distribute images "$start_image"-"$end_image" between frames "$start_frame"-"$end_frame" step=$step
     fi
 
-    # Distribute the images evenly among this frames
+    # Distribute the images evenly among these frames
     for ((i=start_image; i!=end_image+direction; i+=direction)); do
         frame=$(echo "($start_frame + (($i - $start_image) * $step)+0.5)/1" | bc)
         echo image=$i frame: ${image[$i]} -> $frame
@@ -193,6 +197,7 @@ dist_images() {
             break
         fi
         image[$i]=$frame
+        livezones[$i]=$zone_id
     done
     echo "After dist frames: ${image[*]}"
 
@@ -284,7 +289,6 @@ dist_images() {
         done
         move_left=$best_move_left
         move_right=$((dead_images - move_left))
-
     elif [ $spaces_left -gt 0 ]; then
         move_left=$dead_images
     elif [ $spaces_right -gt 0 ]; then
@@ -300,7 +304,7 @@ dist_images() {
     local erm=0
     if [ $move_left -gt 0 ]; then
         echo Left dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
-        step=""; dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image
+        step=""; dist_images $((dead_start - 1)) $min_frame $((left_end_image + move_left)) $min_image $net_zone_id
         if [ "$step" != "" ]; then
             erm=$(echo "($dead_start - 1 + $step + 0.5)/1" | bc)
             echo After Left dist_images step=$step erm=$erm
@@ -346,19 +350,21 @@ generate_montage() {
     range=$((end_frame - start_frame))
     inputs=()
     what="video"
-    [ -n "$2" ] && { what="selected range"; }
-    [ -n "$3" ] && { what="selected range"; }
-    [ -n "$RESIZE" ] && { resizing=" and resizing"; }
+    [ -n "$2" ] && what="selected range"
+    [ -n "$RESIZE" ] && resizing=" and resizing"
     for i in "${!image[@]}"; do
         FRAME_NUM=${image[$i]}
         OUT_FRAME="$TEMP/frame_$i.png"
         PERCENT=$(echo "scale=2; ($FRAME_NUM - $start_frame) * 100 / $range" | bc)
         echo "Extracting frame $i ($PERCENT% of $what)$resizing"
-        if [ "$SHOW_NUMBERS" = true ]; then
-            ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM}),drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='${FRAME_NUM}'$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
-        else
-            ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "select=eq(n\,${FRAME_NUM})$RESIZE" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
+        local filter="select=eq(n\,${FRAME_NUM})$RESIZE"
+        if [ "$SHOW_NUMBERS" = true ] || [ "$SHOW_ZONES" = true ]; then
+            local text=""
+            [ "$SHOW_NUMBERS" = true ] && text="${FRAME_NUM}"
+            [ "$SHOW_ZONES" = true ] && text="${text:+$text }Zone ${livezones[$i]:-Unknown}"
+            filter+=",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='$text'"
         fi
+        ffmpeg -loglevel error -y -i "$(convert_path "$VID")" -vf "$filter" -vsync vfr "$(convert_path "$OUT_FRAME")" >> "$LOG" 2>&1
         [ ! -f "$OUT_FRAME" ] && { echo "Error: Failed to extract frame $i. See $LOG"; exit 1; }
         inputs+=("-i" "$(convert_path "$OUT_FRAME")")
     done
