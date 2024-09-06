@@ -207,8 +207,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
         print(f"Apparently no need to call right dist_images. erm={erm} dead_end={best_dead_end} images_right={images_right}")
-    print(f"For range final: {min_frame} to {max_frame}")
-    print(f"Selected frames: {image}")
+    print(f"Exiting frame_dist for range: {min_frame} to {max_frame}")
 
 def which(program):
     path = shutil.which(program)
