@@ -198,8 +198,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     if move_left > 0:
         print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
         dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
-        else:
-            print("step was blank so erm stays zero")
     else:
         print("No left side to process")
     if move_right > 0 or (step > 0 and images_right > 0):
