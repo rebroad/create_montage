@@ -23,7 +23,9 @@ def get_dimensions(file_path):
     result = subprocess.run(cmd, capture_output=True, text=True)
     dimensions = result.stdout.strip()
     if not dimensions:
-        raise ValueError(f"Unable to get dimensions for {file_path}: {result.stderr}")
+        print(f"Error: Unable to get dimensions for {file_path}")
+        print(f"ffprobe output: {result.stderr}")
+        sys.exit(1)
     return dimensions
 
 def load_deadzones():
@@ -44,29 +46,29 @@ COLS, ROWS = 0, 0
 def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None):
     available_frames = available_frames or AVAILABLE_FRAMES
     print(f"Searching for optimal grid for {WIDTH}:{HEIGHT} aspect ratio")
-    MIN_RATIO_DIFF = float('inf')
+    best_diff = float('inf')
     TARGET_RATIO = WIDTH / HEIGHT
     start_y, end_y = (target_rows, target_rows) if target_rows else (1, available_frames)
     for y in range(start_y, end_y + 1):
         LAST_X_DIFF = float('inf')
         start_x = int((y * TARGET_RATIO * FRAME_HEIGHT) / FRAME_WIDTH)
-        if start_x * y > available_frames:
-            break
         end_x = target_cols if target_cols else available_frames // y
         for x in range(start_x, end_x + 1):
-            GRID_RATIO = (x * FRAME_WIDTH) / (y * FRAME_HEIGHT)
-            RATIO_DIFF = (GRID_RATIO - TARGET_RATIO) ** 2
-            if RATIO_DIFF < MIN_RATIO_DIFF:
-                MIN_RATIO_DIFF = RATIO_DIFF
-                cols, rows = x, y
-                print("BEST! ", end="")
-            elif LAST_X_DIFF < RATIO_DIFF:
-                print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF:.10f} - XBreak")
+            if x * y > available_frames:
                 break
-            print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF:.10f}")
-            LAST_X_DIFF = RATIO_DIFF
-    print(f"Optimal grid: {cols}x{rows}")
-    return cols, rows
+            grid_ratio = (x * FRAME_WIDTH) / (y * FRAME_HEIGHT)
+            diff = (grid_ratio - TARGET_RATIO) ** 2
+            if diff < best_diff:
+                best_diff = diff
+                best_grid = (x, y)
+                print("BEST! ", end="")
+            elif LAST_X_DIFF < diff:
+                print(f"x={x} y={y} diff={diff:.10f} - XBreak")
+                break
+            print(f"x={x} y={y} diff={diff:.10f}")
+            LAST_X_DIFF = diff
+
+    return best_grid
 
 def add_deadzone(start, end=None):
     global deadzones
