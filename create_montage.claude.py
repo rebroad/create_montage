@@ -199,9 +199,10 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
         dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
         if step:
-            erm = int (dead_start - 1 + step + 0.5)
-            # TODO - also check what erm would be if we use the last jump instead
-            print(f"After Left dist_images step={step} erm={erm}")
+            step_erm = int(dead_start - 1 + step + 0.5)
+            jump_erm = image[right_start_image] + jump
+            erm = (step_erm + jump_erm) // 2 # TODO probably could do better
+            print(f"After Left dist_images step={step} step_erm={step_erm} jump_erm={jump_erm}")
         else:
             print("step was blank so erm stays zero")
     else:
@@ -210,13 +211,14 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print("Processing right side")
         if erm != 0:
             print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step} erm={erm}")
-        erm = max(erm, dead_end + 1);
+        erm = max(erm, dead_end + 1)
         print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
         dist_images(erm, max_frame, right_start_image - move_right, max_image)
         if move_left == 0 and images_left > 0:
             print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
-            erm = min(dead_start - 1, int(dead_end + 1 - step + 0.5))
-            # TODO - also check what erm would be if we use the last jump instead
+            step_erm = int(dead_end + 1 - step + 0.5)
+            jump_erm = image[left_end_image] + jump
+            erm = min(dead_start - 1, (step_erm + jump_erm) // 2)  # TODO probably could do better
             print(f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
@@ -263,7 +265,7 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
             if r % 2 == 0:
                 filter += f"{row_inputs}hstack=inputs={cols}[row{r}];"
             else:
-                filter += f"{row_inputs}hstack=inputs={cols},hflip[row{r}];"
+                filter += f"{row_inputs}hstack=inputs={cols},reverse[row{r}];"
         filter += f"{''.join(f'[row{r}]' for r in range(rows))}vstack=inputs={rows}[v]"
 
     print("Creating montage...")
@@ -371,33 +373,42 @@ print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
 
 load_deadzones()
 
-if GRID:
-    if GRID.endswith('x'):
-        COLS, ROWS = find_optimal_grid(target_cols=int(GRID[:-1]))
-    elif GRID.startswith('x'):
-        COLS, ROWS = find_optimal_grid(target_rows=int(GRID[1:]))
+def set_grid(new_grid):
+    global COLS, ROWS, TOTAL_IMAGES
+    if new_grid.endswith('x'):
+        COLS, ROWS = find_optimal_grid(target_cols=int(new_grid[:-1]))
+    elif new_grid.startswith('x'):
+        COLS, ROWS = find_optimal_grid(target_rows=int(new_grid[1:]))
     else:
-        COLS, ROWS = map(int, GRID.split('x'))
+        COLS, ROWS = map(int, new_grid.split('x'))
+    TOTAL_IMAGES = COLS * ROWS
+
+def check_grid()
+    if TOTAL_IMAGES < 2:
+        print("Error: The grid must allow for at least 2 images.")
+        return False
+    if TOTAL_IMAGES > TOTAL_FRAMES:
+        print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
+        return False
+    print(f"Grid set to: {COLS}x{ROWS}")
+    return True
+
+if GRID:
+    set_grid(GRID)
 elif ASPECT_RATIO:
     COLS, ROWS = find_optimal_grid()
 else:
     print("No grid or aspect ratio specified. Using default 2 row grid.")
     COLS, ROWS = find_optimal_grid(target_rows=2)
 
-print(f"Using grid: {COLS}x{ROWS}")
-TOTAL_IMAGES = COLS * ROWS
-if TOTAL_IMAGES < 2:
-    print("Error: The grid must allow for at least 2 images.")
-    sys.exit(1)
-if TOTAL_IMAGES > TOTAL_FRAMES:
-    print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
+if ! check_grid:
     sys.exit(1)
 
 dist_images()
 if INTERACTIVE_MODE:
     while True:
         print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
-        print("4. Show current deadzones  5. Exit")
+        print("4. Show current deadzones  5. Change grid  6. Exit")
         choice = input("Enter your choice: ")
         if choice == '1':
             start, end = map(int, input("Enter start and end frames: ").split())
@@ -419,6 +430,10 @@ if INTERACTIVE_MODE:
                 with open(DEADZONE_FILE, 'r') as f:
                     print(f.read())
         elif choice == '5':
+            new_grid = input("Enter new grid (e.g., 4x3, x3, 4x): ")
+            if change_grid(new_grid):
+                dist_images()
+        elif choice == '6':
             break
         else:
             print("Invalid choice")
