@@ -125,7 +125,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 if skip > 1:
                     print("Skip the rest as numbers match.")
                     break
-            else
+            else:
                 skip = 0
             image[i] = frame
 
