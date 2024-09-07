@@ -41,10 +41,11 @@ def load_deadzones():
                 print(f"DEBUG: Added deadzone {start}:{end}")
     print(f"Total available frames (excluding deadzones): {AVAILABLE_FRAMES}")
 
+COLS, ROWS = 0, 0
+
 def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None):
     global COLS, ROWS
-    if available_frames is None:
-        available_frames = AVAILABLE_FRAMES
+    available_frames = available_frames or AVAILABLE_FRAMES
     print(f"Searching for optimal grid for {WIDTH}:{HEIGHT} aspect ratio")
     MIN_RATIO_DIFF = float('inf')
     TARGET_RATIO = WIDTH / HEIGHT
@@ -97,8 +98,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         end_image = TOTAL_IMAGES - 1
     iter = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else iter + 1
     if iter == 1:
-        #image = [-1] * TOTAL_IMAGES
-        image = [] # TODO  does this work?
+        image = [-1] * TOTAL_IMAGES
+        #image = [] # TODO  does this work?
     print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
 
     if start_image == end_image:
@@ -217,8 +218,10 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"For range final: {min_frame} to {max_frame}")
     print(f"Selected frames: {' '.join(map(str, image))}")
 
-def generate_montage(output_file, start_frame=0, end_frame=None, cols=COLS, rows=ROWS):
+def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows=None):
     end_frame = end_frame or TOTAL_FRAMES - 1
+    cols = cols or COLS
+    rows = rows or ROWS
     inputs = []
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
