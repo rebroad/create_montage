@@ -114,7 +114,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     else:
         direction = 1 if end_image > start_image else -1
         step = (end_frame - start_frame) / (end_image - start_image)
-        print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.6f}")
+        print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.2f}")
 
         for i in range(start_image, end_image + direction, direction):
             frame = int(start_frame + ((i - start_image) * step) + 0.5)
@@ -126,7 +126,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 break
             image[i] = frame
 
-    print(f"After dist frames: {' '.join(map(str, image))}")
+    print(f"Evenly dist frames: {' '.join(map(str, image))}")
 
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
     print(f"Finding largest deadzone within frames {min_frame} to {max_frame}")
@@ -200,31 +200,31 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     if move_right > 0 or (step > 0 and images_right > 0):
         print("Processing right side")
         if step:
-            step_erm = int(dead_start - 1 + step + 0.5)
+            step_erm = dead_start - 1 + step
             jump_erm = image[right_start_image] + jump
-            erm = max(dead_end + 1, (step_erm + jump_erm) // 2) # TODO probably could do better
-            print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step:.6f} erm={erm}")
-            print(f"    last_left={dead_start - 1} step={step} step_erm={step_erm}")
+            erm = max(dead_end + 1, int((step_erm + jump_erm) / 2 + 0.5)) # TODO probably could do better
+            print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step:.2f} erm={erm}")
+            print(f"    last_left={dead_start - 1} step={step:.2f} step_erm={step_erm:.2f}")
             print(f"    jump={jump} first_right={image[right_start_image]} jump_erm={jump_erm}")
-            if step_erm != jump_erm:
+            if int(step_erm + 0.5) != jump_erm:
                 print("DIFFERENT!")
         else:
             erm = dead_end + 1
         print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
         dist_images(erm, max_frame, right_start_image - move_right, max_image)
         if move_left == 0 and images_left > 0:
-            step_erm = int(dead_end + 1 - step + 0.5)
+            step_erm = dead_end + 1 - step
             jump_erm = image[left_end_image] + jump
-            erm = min(dead_start - 1, (step_erm + jump_erm) // 2)  # TODO probably could do better
-            print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
-            print(f"    first_right={dead_end + 1} step={step} step_erm={step_erm}")
+            erm = min(dead_start - 1, int((step_erm + jump_erm) / 2 + 0.5))  # TODO probably could do better
+            print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step:.2f}")
+            print(f"    first_right={dead_end + 1} step={step:.2f} step_erm={step_erm:.2f}")
             print(f"    jump={jump} last_left={image[left_end_image]} jump_erm={jump_erm}")
-            if step_erm != jump_erm:
+            if int(step_erm + 0.5) != jump_erm:
                 print("DIFFERENT!")
             print(f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
-        print(f"Apparently no need to call right dist_images. step={step} dead_end={dead_end} images_right={images_right}")
+        print(f"Apparently no need to call right dist_images. step={step:.2f} dead_end={dead_end} images_right={images_right}")
     print(f"Exiting frame_dist for range: {min_frame} to {max_frame}")
 
     print(f"For range final: {min_frame} to {max_frame}")
