@@ -26,7 +26,8 @@ def get_dimensions(file_path):
         print(f"Error: Unable to get dimensions for {file_path}")
         print(f"ffprobe output: {result.stderr}")
         sys.exit(1)
-    return dimensions
+    width, height = map(int, dimensions.split('x'))
+    return width, height
 
 def load_deadzones():
     global AVAILABLE_FRAMES, deadzones
@@ -359,13 +360,11 @@ else:
 print(f"Total frames determined: {TOTAL_FRAMES}")
 
 if START_IMAGE:
-    DIM = get_dimensions(START_IMAGE)
-    SW, SH = map(int, DIM.split('x'))
+    SW, SH = get_dimensions(START_IMAGE)
     RESIZE = f",scale={SW}:{SH}" if SW and SH else ""
     FRAME_WIDTH, FRAME_HEIGHT = SW, SH
 else:
-    DIM, RESIZE = get_dimensions(VID), ""
-    FRAME_WIDTH, FRAME_HEIGHT = map(int, DIM.split('x'))
+    FRAME_WIDTH, FRAME_HEIGHT, RESIZE = get_dimensions(VID), ""
 print(f"Frame dimensions: {FRAME_WIDTH} by {FRAME_HEIGHT}")
 
 if ASPECT_RATIO:
