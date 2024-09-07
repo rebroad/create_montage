@@ -97,7 +97,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         end_image = TOTAL_IMAGES - 1
     iter = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else iter + 1
     if iter == 1:
-        image = [-1] * TOTAL_IMAGES
+        #image = [-1] * TOTAL_IMAGES
+        image = [] # TODO  does this work?
     print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
 
     if start_image == end_image:
@@ -216,16 +217,15 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"For range final: {min_frame} to {max_frame}")
     print(f"Selected frames: {' '.join(map(str, image))}")
 
-def generate_montage(output_file, start_frame=0, end_frame=None):
+def generate_montage(output_file, start_frame=0, end_frame=None, cols=COLS, rows=ROWS):
     end_frame = end_frame or TOTAL_FRAMES - 1
-    range_frames = end_frame - start_frame
     inputs = []
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
 
     for i, frame_num in enumerate(image):
         out_frame = os.path.join(TEMP, f"frame_{frame_num}.png")
-        percent = i / range_frames * 100
+        percent = (i / (len(image) - 1)) * 100
         print(f"Extracting frame {i} (frame {frame_num}, {percent:.2f}% of {what}){resizing}")
         filter = f"select=eq(n\\,{frame_num}){RESIZE}"
         if SHOW_NUMBERS:
@@ -236,33 +236,30 @@ def generate_montage(output_file, start_frame=0, end_frame=None):
         inputs.extend(["-i", convert_path(out_frame)])
         if os.path.exists(out_frame):
             continue
-        cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
         if not os.path.exists(out_frame):
             print(f"Error: Failed to extract frame {i}. See {LOG}")
             sys.exit(1)
 
-    if ROWS == 1:
+    if rows == 1:
         filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}hstack=inputs={TOTAL_IMAGES}[v]"
-    elif COLS == 1:
+    elif cols == 1:
         filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}vstack=inputs={TOTAL_IMAGES}[v]"
     else:
         filter = ""
-        for r in range(ROWS):
-            row_inputs = ''.join(f'[{i}:v]' for i in range(r*COLS, (r+1)*COLS))
+        for r in range(rows):
+            row_inputs = ''.join(f'[{i}:v]' for i in range(r*cols, (r+1)*cols))
             if r % 2 == 0:
-                filter += f"{row_inputs}hstack=inputs={COLS}[row{r}];"
+                filter += f"{row_inputs}hstack=inputs={cols}[row{r}];"
             else:
-                filter += f"{row_inputs}hstack=inputs={COLS},hflip[row{r}];"
-        filter += f"{''.join(f'[row{r}]' for r in range(ROWS))}vstack=inputs={ROWS}[v]"
+                filter += f"{row_inputs}hstack=inputs={cols},hflip[row{r}];"
+        filter += f"{''.join(f'[row{r}]' for r in range(rows))}vstack=inputs={rows}[v]"
 
     print("Creating montage...")
     print(f"Filter complex: {filter}")
 
     os.environ['FONTCONFIG_FILE'] = "/dev/null"
-
-    cmd = ["ffmpeg", "-loglevel", "error", "-y"] + inputs + ["-filter_complex", filter, "-map", "[v]", convert_path(output_file)]
-    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(["ffmpeg", "-loglevel", "error", "-y"] + inputs + ["-filter_complex", filter, "-map", "[v]", convert_path(output_file)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     if result.returncode == 0 and os.path.exists(output_file):
         print(f"Montage saved as {output_file}")
     else:
@@ -386,9 +383,7 @@ if TOTAL_IMAGES > TOTAL_FRAMES:
     sys.exit(1)
 
 dist_images()
-if not INTERACTIVE_MODE:
-    generate_montage(OUT)
-else:
+if INTERACTIVE_MODE:
     while True:
         print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
         print("4. Show current deadzones  5. Exit")
@@ -398,13 +393,11 @@ else:
             add_deadzone(start, end)
             dist_images()
         elif choice == '2':
-            # TODO - avoid changing global variables in this section
             start, end = map(int, input("Enter start and end frames: ").split())
-            find_optimal_grid(end - start + 1)
-            TOTAL_IMAGES = COLS * ROWS
-            step = (end - start) / (TOTAL_IMAGES - 1)
-            image = [int(start_frame + (i * step) + 0.5) for i in range(num_images)]
-            generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end)
+            cols, rows = find_optimal_grid(end - start + 1)
+            step = (end - start) / ((cols * rows) - 1)
+            image = [int(start + (i * step) + 0.5) for i in range(cols * rows)]
+            generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end, cols, rows)
             print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
         elif choice == '3':
             generate_montage(OUT)
@@ -413,12 +406,12 @@ else:
             if os.path.exists(DEADZONE_FILE):
                 with open(DEADZONE_FILE, 'r') as f:
                     print(f.read())
-            else:
-                print("No deadzones defined.")
         elif choice == '5':
             break
         else:
             print("Invalid choice")
+else:
+    generate_montage(OUT)
 
 shutil.rmtree(TEMP)
 print(f"Temporary files deleted. Log file: {LOG}")
