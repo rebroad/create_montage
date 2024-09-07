@@ -384,7 +384,7 @@ def set_grid(new_grid):
         COLS, ROWS = map(int, new_grid.split('x'))
     TOTAL_IMAGES = COLS * ROWS
 
-def check_grid()
+def check_grid():
     if TOTAL_IMAGES < 2:
         print("Error: The grid must allow for at least 2 images.")
         return False
@@ -402,7 +402,7 @@ else:
     print("No grid or aspect ratio specified. Using default 2 row grid.")
     COLS, ROWS = find_optimal_grid(target_rows=2)
 
-if ! check_grid:
+if not check_grid:
     sys.exit(1)
 
 dist_images()
