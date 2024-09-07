@@ -99,7 +99,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     iter = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else iter + 1
     if iter == 1:
         image = [-1] * TOTAL_IMAGES
-        #image = [] # TODO  does this work?
     print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
 
     jump = 0
