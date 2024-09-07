@@ -245,9 +245,9 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
             sys.exit(1)
 
     if rows == 1:
-        filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}hstack=inputs={TOTAL_IMAGES}[v]"
+        filter = f"{''.join(f'[{i}:v]' for i in range(cols))}hstack=inputs={cols}[v]"
     elif cols == 1:
-        filter = f"{''.join(f'[{i}:v]' for i in range(TOTAL_IMAGES))}vstack=inputs={TOTAL_IMAGES}[v]"
+        filter = f"{''.join(f'[{i}:v]' for i in range(rows))}vstack=inputs={rows}[v]"
     else:
         filter = ""
         for r in range(rows):
@@ -401,6 +401,7 @@ if INTERACTIVE_MODE:
             step = (end - start) / ((cols * rows) - 1)
             image = [int(start + (i * step) + 0.5) for i in range(cols * rows)]
             generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end, cols, rows)
+            dist_images()
             print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
         elif choice == '3':
             generate_montage(OUT)
