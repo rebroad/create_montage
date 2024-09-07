@@ -197,27 +197,32 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     if move_left > 0:
         print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
         dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
-        if step:
-            step_erm = int(dead_start - 1 + step + 0.5)
-            jump_erm = image[right_start_image] + jump
-            erm = (step_erm + jump_erm) // 2 # TODO probably could do better
-            print(f"After Left dist_images step={step} step_erm={step_erm} jump_erm={jump_erm}")
         else:
             print("step was blank so erm stays zero")
     else:
         print("No left side to process")
-    if images_right > 0:
+    if move_right > 0 or (step > 0 and images_right > 0):
         print("Processing right side")
-        if erm != 0:
+        if step:
+            step_erm = int(dead_start - 1 + step + 0.5)
+            jump_erm = image[right_start_image] + jump
+            erm = max(dead_end + 1, (step_erm + jump_erm) // 2) # TODO probably could do better
             print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step} erm={erm}")
-        erm = max(erm, dead_end + 1)
+            print(f"    step={step} step_erm={step_erm} jump_erm={jump_erm}")
+            if step_erm != jump_erm:
+                print("DIFFERENT!")
+        else:
+            erm = dead_end + 1
         print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
         dist_images(erm, max_frame, right_start_image - move_right, max_image)
         if move_left == 0 and images_left > 0:
-            print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
             step_erm = int(dead_end + 1 - step + 0.5)
             jump_erm = image[left_end_image] + jump
             erm = min(dead_start - 1, (step_erm + jump_erm) // 2)  # TODO probably could do better
+            print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
+            print(f"    step={step} step_erm={step_erm} jump_erm={jump_erm}")
+            if step_erm != jump_erm:
+                print("DIFFERENT!")
             print(f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
