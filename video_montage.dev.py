@@ -107,26 +107,23 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         frame, i = image[start_image], start_image
         if 0 < frame < TOTAL_FRAMES - 1:
             image[i] = (start_frame + end_frame) // 2
-            jump = {image[i]} - {frame} # TODO - what should we set step to?
+            jump = image[i] - frame # TODO - what should we set step to?
             print(f"image={i} frame: {frame} -> {image[i]} (center of {start_frame}:{end_frame})")
         else:
             print(f"Keep image {start_image} at its current position ({image[start_image]}) as it's special.")
     else:
         direction = 1 if end_image > start_image else -1
-        step, skip = (end_frame - start_frame) / (end_image - start_image), 0
+        step = (end_frame - start_frame) / (end_image - start_image)
         print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.6f}")
 
         for i in range(start_image, end_image + direction, direction):
             frame = int(start_frame + ((i - start_image) * step) + 0.5)
-            jump = {frame} - {image[i]}
+            if jump == 0:
+                jump = frame - image[i]
             print(f"image={i} frame: {image[i]} -> {frame}")
             if image[i] == frame:
-                skip = skip + 1
-                if skip > 1:
-                    print("Skip the rest as numbers match.")
-                    break
-            else:
-                skip = 0
+                print("Skip the rest as numbers match.")
+                break
             image[i] = frame
 
     print(f"After dist frames: {' '.join(map(str, image))}")
@@ -206,8 +203,9 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             step_erm = int(dead_start - 1 + step + 0.5)
             jump_erm = image[right_start_image] + jump
             erm = max(dead_end + 1, (step_erm + jump_erm) // 2) # TODO probably could do better
-            print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step} erm={erm}")
-            print(f"    step={step} step_erm={step_erm} jump_erm={jump_erm}")
+            print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step:.6f} erm={erm}")
+            print(f"    last_left={dead_start - 1} step={step} step_erm={step_erm}")
+            print(f"    jump={jump} first_right={image[right_start_image]} jump_erm={jump_erm}")
             if step_erm != jump_erm:
                 print("DIFFERENT!")
         else:
@@ -219,13 +217,14 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             jump_erm = image[left_end_image] + jump
             erm = min(dead_start - 1, (step_erm + jump_erm) // 2)  # TODO probably could do better
             print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
-            print(f"    step={step} step_erm={step_erm} jump_erm={jump_erm}")
+            print(f"    first_right={dead_end + 1} step={step} step_erm={step_erm}")
+            print(f"    jump={jump} last_left={image[left_end_image]} jump_erm={jump_erm}")
             if step_erm != jump_erm:
                 print("DIFFERENT!")
             print(f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
-        print(f"Apparently no need to call right dist_images. erm={erm} dead_end={dead_end} images_right={images_right}")
+        print(f"Apparently no need to call right dist_images. step={step} dead_end={dead_end} images_right={images_right}")
     print(f"Exiting frame_dist for range: {min_frame} to {max_frame}")
 
     print(f"For range final: {min_frame} to {max_frame}")
@@ -246,8 +245,7 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
         filter = f"select=eq(n\\,{frame_num}){RESIZE}"
         if SHOW_NUMBERS:
             text = []
-            if SHOW_NUMBERS:
-                text.append(str(frame_num))
+            text.append(str(frame_num)) # TODO - make the text size proportional to the size of the montage
             filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
         inputs.extend(["-i", convert_path(out_frame)])
         if os.path.exists(out_frame):
@@ -362,7 +360,8 @@ if START_IMAGE:
     RESIZE = f",scale={SW}:{SH}" if SW and SH else ""
     FRAME_WIDTH, FRAME_HEIGHT = SW, SH
 else:
-    FRAME_WIDTH, FRAME_HEIGHT, RESIZE = get_dimensions(VID), ""
+    FRAME_WIDTH, FRAME_HEIGHT = get_dimensions(VID)
+    RESIZE = ""
 print(f"Frame dimensions: {FRAME_WIDTH} by {FRAME_HEIGHT}")
 
 if ASPECT_RATIO:
@@ -374,42 +373,33 @@ print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
 
 load_deadzones()
 
-def set_grid(new_grid):
-    global COLS, ROWS, TOTAL_IMAGES
-    if new_grid.endswith('x'):
-        COLS, ROWS = find_optimal_grid(target_cols=int(new_grid[:-1]))
-    elif new_grid.startswith('x'):
-        COLS, ROWS = find_optimal_grid(target_rows=int(new_grid[1:]))
-    else:
-        COLS, ROWS = map(int, new_grid.split('x'))
-    TOTAL_IMAGES = COLS * ROWS
-
-def check_grid():
-    if TOTAL_IMAGES < 2:
-        print("Error: The grid must allow for at least 2 images.")
-        return False
-    if TOTAL_IMAGES > TOTAL_FRAMES:
-        print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
-        return False
-    print(f"Grid set to: {COLS}x{ROWS}")
-    return True
-
 if GRID:
-    set_grid(GRID)
+    if GRID.endswith('x'):
+        COLS, ROWS = find_optimal_grid(target_cols=int(GRID[:-1]))
+    elif GRID.startswith('x'):
+        COLS, ROWS = find_optimal_grid(target_rows=int(GRID[1:]))
+    else:
+        COLS, ROWS = map(int, GRID.split('x'))
 elif ASPECT_RATIO:
     COLS, ROWS = find_optimal_grid()
 else:
     print("No grid or aspect ratio specified. Using default 2 row grid.")
     COLS, ROWS = find_optimal_grid(target_rows=2)
 
-if not check_grid:
+print(f"Using grid: {COLS}x{ROWS}")
+TOTAL_IMAGES = COLS * ROWS
+if TOTAL_IMAGES < 2:
+    print("Error: The grid must allow for at least 2 images.")
+    sys.exit(1)
+if TOTAL_IMAGES > TOTAL_FRAMES:
+    print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
     sys.exit(1)
 
 dist_images()
 if INTERACTIVE_MODE:
     while True:
         print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
-        print("4. Show current deadzones  5. Change grid  6. Exit")
+        print("4. Show current deadzones  5. Exit")
         choice = input("Enter your choice: ")
         if choice == '1':
             start, end = map(int, input("Enter start and end frames: ").split())
@@ -431,10 +421,6 @@ if INTERACTIVE_MODE:
                 with open(DEADZONE_FILE, 'r') as f:
                     print(f.read())
         elif choice == '5':
-            new_grid = input("Enter new grid (e.g., 4x3, x3, 4x): ")
-            if change_grid(new_grid):
-                dist_images()
-        elif choice == '6':
             break
         else:
             print("Invalid choice")
