@@ -44,7 +44,6 @@ def load_deadzones():
 COLS, ROWS = 0, 0
 
 def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None):
-    global COLS, ROWS
     available_frames = available_frames or AVAILABLE_FRAMES
     print(f"Searching for optimal grid for {WIDTH}:{HEIGHT} aspect ratio")
     MIN_RATIO_DIFF = float('inf')
@@ -61,14 +60,15 @@ def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None)
             RATIO_DIFF = (GRID_RATIO - TARGET_RATIO) ** 2
             if RATIO_DIFF < MIN_RATIO_DIFF:
                 MIN_RATIO_DIFF = RATIO_DIFF
-                COLS, ROWS = x, y
+                cols, rows = x, y
                 print("BEST! ", end="")
             elif LAST_X_DIFF < RATIO_DIFF:
                 print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF:.10f} - XBreak")
                 break
             print(f"x={x} y={y} RATIO_DIFF={RATIO_DIFF:.10f}")
             LAST_X_DIFF = RATIO_DIFF
-    print(f"Optimal grid: {COLS}x{ROWS}")
+    print(f"Optimal grid: {cols}x{rows}")
+    return cols, rows
 
 def add_deadzone(start, end=None):
     global deadzones
@@ -365,16 +365,16 @@ load_deadzones()
 
 if GRID:
     if GRID.endswith('x'):
-        find_optimal_grid(target_cols=int(GRID[:-1]))
+        COLS, ROWS = find_optimal_grid(target_cols=int(GRID[:-1]))
     elif GRID.startswith('x'):
-        find_optimal_grid(target_rows=int(GRID[1:]))
+        COLS, ROWS = find_optimal_grid(target_rows=int(GRID[1:]))
     else:
         COLS, ROWS = map(int, GRID.split('x'))
 elif ASPECT_RATIO:
-    find_optimal_grid()
+    COLS, ROWS = find_optimal_grid()
 else:
     print("No grid or aspect ratio specified. Using default 2 row grid.")
-    find_optimal_grid(target_rows=2)
+    COLS, ROWS = find_optimal_grid(target_rows=2)
 
 print(f"Using grid: {COLS}x{ROWS}")
 TOTAL_IMAGES = COLS * ROWS
