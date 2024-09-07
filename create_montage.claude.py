@@ -90,7 +90,7 @@ def add_deadzone(start, end=None):
     load_deadzones()
 
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
-    global image, step, iter
+    global image, jump, step, iter
     start_frame = max(0, start_frame)
     if end_frame is None:
         end_frame = TOTAL_FRAMES - 1
@@ -102,24 +102,31 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         #image = [] # TODO  does this work?
     print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
 
+    jump = 0
     if start_image == end_image:
-        frame = image[start_image]
+        frame, i = image[start_image], start_image
         if 0 < frame < TOTAL_FRAMES - 1:
-            image[start_image] = (start_frame + end_frame) // 2
-            print(f"Placing image {start_image} in center of {start_frame}:{end_frame} at frame={image[start_image]}")
+            image[i] = (start_frame + end_frame) // 2
+            jump = {image[i]} - {frame} # TODO - what should we set step to?
+            print(f"image={i} frame: {frame} -> {image[i]} (center of {start_frame}:{end_frame})")
         else:
             print(f"Keep image {start_image} at its current position ({image[start_image]}) as it's special.")
     else:
         direction = 1 if end_image > start_image else -1
-        step = (end_frame - start_frame) / (end_image - start_image)
+        step, skip = (end_frame - start_frame) / (end_image - start_image), 0
         print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.6f}")
 
         for i in range(start_image, end_image + direction, direction):
             frame = int(start_frame + ((i - start_image) * step) + 0.5)
+            jump = {frame} - {image[i]}
             print(f"image={i} frame: {image[i]} -> {frame}")
             if image[i] == frame:
-                print("Skip the rest as numbers match.")
-                break
+                skip = skip + 1
+                if skip > 1:
+                    print("Skip the rest as numbers match.")
+                    break
+            else
+                skip = 0
             image[i] = frame
 
     print(f"After dist frames: {' '.join(map(str, image))}")
@@ -187,12 +194,13 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"dead_images={dead_images} move_left={move_left} move_right={move_right}")
 
     print("Recurse into new livezones")
-    erm = 0
+    step = 0
     if move_left > 0:
         print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
         dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
         if step:
-            erm = int(dead_start - 1 + step + 0.5)
+            erm = int (dead_start - 1 + step + 0.5)
+            # TODO - also check what erm would be if we use the last jump instead
             print(f"After Left dist_images step={step} erm={erm}")
         else:
             print("step was blank so erm stays zero")
@@ -200,15 +208,15 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print("No left side to process")
     if images_right > 0:
         print("Processing right side")
-        if erm < dead_end + 1:
-            if erm != 0:
-                print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step}")
-            erm = dead_end + 1
+        if erm != 0:
+            print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. step={step} erm={erm}")
+        erm = max(erm, dead_end + 1);
         print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
         dist_images(erm, max_frame, right_start_image - move_right, max_image)
         if move_left == 0 and images_left > 0:
             print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. step={step}")
             erm = min(dead_start - 1, int(dead_end + 1 - step + 0.5))
+            # TODO - also check what erm would be if we use the last jump instead
             print(f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
