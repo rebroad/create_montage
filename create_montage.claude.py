@@ -23,9 +23,7 @@ def get_dimensions(file_path):
     result = subprocess.run(cmd, capture_output=True, text=True)
     dimensions = result.stdout.strip()
     if not dimensions:
-        print(f"Error: Unable to get dimensions for {file_path}")
-        print(f"ffprobe output: {result.stderr}")
-        sys.exit(1)
+        raise ValueError(f"Unable to get dimensions for {file_path}: {result.stderr}")
     return dimensions
 
 def load_deadzones():
