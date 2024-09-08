@@ -1,3 +1,5 @@
+#!/bin/python
+
 import tkinter as tk
 import math
 import time
@@ -5,6 +7,7 @@ import time
 # Constants
 WIDTH, HEIGHT = 800, 600
 FPS = 60
+NUM_FRAMES = 21
 
 class Mass:
     def __init__(self, x, y, mass=1.0, fixed=False):
@@ -25,10 +28,10 @@ class Spring:
         self.k = k
 
 class Deadzone:
-    def __init__(self, start, end, height):
-        self.start = start
-        self.end = end
-        self.height = height
+    def __init__(self, center_x, radius):
+        self.center_x = center_x
+        self.radius = radius
+        self.y = HEIGHT + radius  # Start below the screen
 
 class Simulation:
     def __init__(self, num_frames, deadzones):
@@ -44,9 +47,14 @@ class Simulation:
         # Create springs between adjacent masses
         for i in range(num_frames - 1):
             rest_length = self.masses[i+1].x - self.masses[i].x
-            self.springs.append(Spring(self.masses[i], self.masses[i+1], rest_length))
+            self.springs.append(Spring(self.masses[i], self.masses[i+1], rest_length, k=0.5))
 
     def update(self):
+        # Move deadzones upward
+        for deadzone in self.deadzones:
+            if deadzone.y > HEIGHT // 2:
+                deadzone.y -= 1
+
         # Apply spring forces
         for spring in self.springs:
             dx = spring.mass2.x - spring.mass1.x
@@ -67,8 +75,13 @@ class Simulation:
         # Apply deadzone forces
         for mass in self.masses:
             for deadzone in self.deadzones:
-                if deadzone.start <= mass.x <= deadzone.end and mass.y > HEIGHT // 2 - deadzone.height:
-                    mass.ay -= 0.1  # Push upwards if inside deadzone
+                dx = mass.x - deadzone.center_x
+                dy = mass.y - deadzone.y
+                distance = math.sqrt(dx*dx + dy*dy)
+                if distance < deadzone.radius:
+                    force = 1.0 * (deadzone.radius - distance)
+                    mass.ax += force * dx / distance / mass.mass
+                    mass.ay += force * dy / distance / mass.mass
 
         # Update positions
         for mass in self.masses:
@@ -92,14 +105,14 @@ class Application(tk.Tk):
         self.title("Frame Distribution Simulation")
         self.geometry(f"{WIDTH}x{HEIGHT}")
         
-        self.canvas = tk.Canvas(self, width=WIDTH, height=HEIGHT, bg="white")
+        self.canvas = tk.Canvas(self, width=WIDTH, height=HEIGHT, bg="black")
         self.canvas.pack()
 
         deadzones = [
-            Deadzone(200, 300, 100),
-            Deadzone(500, 550, 150)
+            Deadzone(250, 100),
+            Deadzone(550, 75)
         ]
-        self.sim = Simulation(20, deadzones)
+        self.sim = Simulation(NUM_FRAMES, deadzones)
 
         self.update_simulation()
 
@@ -113,17 +126,28 @@ class Application(tk.Tk):
 
         # Draw deadzones
         for deadzone in self.sim.deadzones:
-            self.canvas.create_rectangle(deadzone.start, HEIGHT // 2 - deadzone.height, 
-                                         deadzone.end, HEIGHT // 2, fill="red")
+            self.canvas.create_oval(
+                deadzone.center_x - deadzone.radius,
+                deadzone.y - deadzone.radius,
+                deadzone.center_x + deadzone.radius,
+                deadzone.y + deadzone.radius,
+                fill="red", outline="red"
+            )
 
         # Draw springs
         for spring in self.sim.springs:
-            self.canvas.create_line(spring.mass1.x, spring.mass1.y, 
-                                    spring.mass2.x, spring.mass2.y)
+            self.canvas.create_line(
+                spring.mass1.x, spring.mass1.y, 
+                spring.mass2.x, spring.mass2.y,
+                fill="white"
+            )
 
         # Draw masses
         for mass in self.sim.masses:
-            self.canvas.create_oval(mass.x-5, mass.y-5, mass.x+5, mass.y+5, fill="blue")
+            self.canvas.create_oval(
+                mass.x-3, mass.y-3, mass.x+3, mass.y+3,
+                fill="white", outline="white"
+            )
 
 def main():
     app = Application()
