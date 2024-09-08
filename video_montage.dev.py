@@ -161,7 +161,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             images_right += 1
     print(f"dead_images={dead_images} images_on_left={images_left} images_on_right={images_right}")
     if dead_images == 0:
-        print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={this_jump}
+        print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={this_jump}")
         return this_jump
 
     print(f"livezones: left: {min_frame}:{dead_start - 1} right: {dead_end + 1}:{max_frame}")
@@ -231,7 +231,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"For range final: {min_frame} to {max_frame}")
     print(f"Selected frames: {' '.join(map(str, image))}")
 
-    print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={this_jump}
+    print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={this_jump}")
     return this_jump
 
 def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows=None):
