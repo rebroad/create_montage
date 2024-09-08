@@ -7,8 +7,8 @@ import math
 WIDTH, HEIGHT = 800, 600
 FPS = 60
 NUM_FRAMES = 21
-MAX_FORCE = 10.0  # Maximum force to prevent instability
-COLLISION_SLOWDOWN = 0.1  # Factor to slow down simulation on collision
+MAX_FORCE = 5.0  # Maximum force to prevent instability
+COLLISION_SLOWDOWN = 0.2  # Factor to slow down simulation on collision
 
 class Mass:
     def __init__(self, x, y, mass=1.0, fixed=False):
@@ -43,17 +43,23 @@ class Simulation:
         # Create masses for frames
         for i in range(num_frames):
             x = i * (WIDTH / (num_frames - 1))
-            self.masses.append(Mass(x, HEIGHT // 2, mass=0.1))
+            fixed = (i == 0 or i == num_frames - 1)  # Fix first and last frames
+            self.masses.append(Mass(x, HEIGHT // 2, mass=0.1, fixed=fixed))
         
         # Create springs between adjacent masses
         for i in range(num_frames - 1):
             rest_length = self.masses[i+1].x - self.masses[i].x
             self.springs.append(Spring(self.masses[i], self.masses[i+1], rest_length, k=0.5))
 
+        # Align deadzone centers
+        max_radius = max(dz.radius for dz in self.deadzones)
+        for dz in self.deadzones:
+            dz.y = HEIGHT // 2 + max_radius
+
     def update(self):
         # Move deadzones upward
-        for deadzone in self.deadzones:
-            if deadzone.y > HEIGHT // 2:
+        if all(dz.y > HEIGHT // 2 for dz in self.deadzones):
+            for deadzone in self.deadzones:
                 deadzone.y -= 0.5
 
         # Check for collisions
@@ -74,21 +80,18 @@ class Simulation:
         # Verlet integration
         for mass in self.masses:
             if not mass.fixed:
-                temp_x = mass.x
-                temp_y = mass.y
+                temp_x, temp_y = mass.x, mass.y
                 mass.x = 2 * mass.x - mass.old_x
                 mass.y = 2 * mass.y - mass.old_y
-                mass.old_x = temp_x
-                mass.old_y = temp_y
+                mass.old_x, mass.old_y = temp_x, temp_y
 
-        # Calculate forces and update positions
+        # Calculate spring forces and update positions
         for spring in self.springs:
             dx = spring.mass2.x - spring.mass1.x
             dy = spring.mass2.y - spring.mass1.y
             distance = math.sqrt(dx*dx + dy*dy)
             force = spring.k * (distance - spring.rest_length)
             
-            # Limit the force to prevent instability
             force = max(min(force, MAX_FORCE), -MAX_FORCE)
             
             fx = force * dx / distance
@@ -101,22 +104,25 @@ class Simulation:
                 spring.mass2.x -= fx * dt * dt / spring.mass2.mass
                 spring.mass2.y -= fy * dt * dt / spring.mass2.mass
 
-        # Apply deadzone forces
+        # Apply deadzone forces and prevent entering
         for mass in self.masses:
-            for deadzone in self.deadzones:
-                dx = mass.x - deadzone.center_x
-                dy = mass.y - deadzone.y
-                distance = math.sqrt(dx*dx + dy*dy)
-                if distance < deadzone.radius + 5:  # 5 is the mass radius
-                    force = 1.0 * (deadzone.radius + 5 - distance)
-                    force = max(min(force, MAX_FORCE), -MAX_FORCE)
-                    mass.x += force * dx / distance * dt * dt / mass.mass
-                    mass.y += force * dy / distance * dt * dt / mass.mass
+            if not mass.fixed:
+                for deadzone in self.deadzones:
+                    dx = mass.x - deadzone.center_x
+                    dy = mass.y - deadzone.y
+                    distance = math.sqrt(dx*dx + dy*dy)
+                    if distance < deadzone.radius + 5:  # 5 is the mass radius
+                        overlap = deadzone.radius + 5 - distance
+                        force = 10.0 * overlap  # Increase force to prevent entering
+                        force = max(min(force, MAX_FORCE), -MAX_FORCE)
+                        mass.x += force * dx / distance * dt * dt / mass.mass
+                        mass.y += force * dy / distance * dt * dt / mass.mass
 
-        # Keep masses within screen boundaries
+        # Keep masses within screen boundaries (except fixed masses)
         for mass in self.masses:
-            mass.x = max(0, min(mass.x, WIDTH))
-            mass.y = max(0, min(mass.y, HEIGHT))
+            if not mass.fixed:
+                mass.x = max(0, min(mass.x, WIDTH))
+                mass.y = max(0, min(mass.y, HEIGHT))
 
 class Application(tk.Tk):
     def __init__(self):
@@ -162,10 +168,11 @@ class Application(tk.Tk):
             )
 
         # Draw masses
-        for mass in self.sim.masses:
+        for i, mass in enumerate(self.sim.masses):
+            color = "yellow" if mass.fixed else "white"
             self.canvas.create_oval(
                 mass.x-3, mass.y-3, mass.x+3, mass.y+3,
-                fill="white", outline="white"
+                fill=color, outline=color
             )
 
 def main():
