@@ -6,6 +6,7 @@ import sys
 import argparse
 import os
 
+# Constants
 WIDTH, HEIGHT = 800, 600
 FPS = 60
 EPSILON = 1e-6
@@ -33,7 +34,8 @@ class Deadzone:
     def __init__(self, start, end):
         self.start = start
         self.end = end + 1  # Include the end frame in the deadzone
-        self.y = HEIGHT // 2 + 1  # Start just below the floor
+        self.y = HEIGHT  # Start below the screen
+        self.height = 0  # Will be set in the Simulation class
 
 class Simulation:
     def __init__(self, num_frames, num_images, deadzones):
@@ -57,6 +59,21 @@ class Simulation:
             if deadzone.start < num_frames and deadzone.end >= num_frames:
                 self.last_available_frame = deadzone.start - 1
 
+        # Calculate the maximum triangle height
+        max_base_width = 0
+        for deadzone in deadzones:
+            start_x = (deadzone.start - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
+            end_x = (deadzone.end - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
+            base_width = end_x - start_x
+            max_base_width = max(max_base_width, base_width)
+        
+        max_height = max_base_width * math.sqrt(3) / 2
+
+        # Set the height for all deadzones
+        for deadzone in deadzones:
+            deadzone.height = max_height
+            deadzone.y = self.floor_y + max_height  # Start below the floor
+
         # Create masses for images
         for i in range(num_images):
             x = i * (WIDTH / (num_images - 1))
@@ -70,9 +87,18 @@ class Simulation:
 
     def update(self):
         # Move deadzones upward
+        all_at_floor = True
         for deadzone in self.deadzones:
             if deadzone.y > self.floor_y:
                 deadzone.y -= 0.5 * self.speed
+                all_at_floor = False
+            else:
+                deadzone.y = self.floor_y
+
+        # Stop moving deadzones when all reach the floor
+        if all_at_floor:
+            for deadzone in self.deadzones:
+                deadzone.y = self.floor_y
 
         dt = self.dt  # Use constant time step
 
@@ -115,20 +141,23 @@ class Simulation:
                     start_x = (deadzone.start - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
                     end_x = (deadzone.end - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
                     base_width = end_x - start_x
-                    height = base_width * math.sqrt(3) / 2  # Equilateral triangle height
                     if start_x <= new_x <= end_x:
                         relative_x = (new_x - start_x) / base_width
-                        triangle_y = self.floor_y - height * (1 - abs(2 * relative_x - 1))
+                        triangle_y = deadzone.y - deadzone.height * (1 - abs(2 * relative_x - 1))
                         if new_y >= triangle_y:
-                            # Push the mass out of the deadzone
+                            # Calculate normal vector of the triangle surface
                             normal_x = 2 * relative_x - 1
                             normal_y = -math.sqrt(3) / 2
                             normal_length = math.sqrt(normal_x**2 + normal_y**2)
                             normal_x /= normal_length
                             normal_y /= normal_length
+
+                            # Project velocity onto the surface
                             dot_product = mass.vx * normal_x + mass.vy * normal_y
-                            mass.vx -= 2 * dot_product * normal_x
-                            mass.vy -= 2 * dot_product * normal_y
+                            mass.vx -= dot_product * normal_x
+                            mass.vy -= dot_product * normal_y
+
+                            # Move the mass to the surface of the triangle
                             new_x = max(start_x, min(new_x, end_x))
                             new_y = triangle_y - EPSILON
 
@@ -188,15 +217,14 @@ class Application(tk.Tk):
     def draw(self):
         self.canvas.delete("all")
 
+        # Draw deadzones
         for deadzone in self.sim.deadzones:
             start_x = (deadzone.start - self.sim.first_available_frame) / (self.sim.last_available_frame - self.sim.first_available_frame) * WIDTH
             end_x = (deadzone.end - self.sim.first_available_frame) / (self.sim.last_available_frame - self.sim.first_available_frame) * WIDTH
-            base_width = end_x - start_x
-            height = base_width * math.sqrt(3) / 2
             self.canvas.create_polygon(
                 start_x, deadzone.y,
                 end_x, deadzone.y,
-                (start_x + end_x) / 2, deadzone.y - height,
+                (start_x + end_x) / 2, deadzone.y - deadzone.height,
                 fill="red", outline="red"
             )
 
