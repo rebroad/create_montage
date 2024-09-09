@@ -7,10 +7,10 @@ import math
 WIDTH, HEIGHT = 800, 600
 FPS = 60
 NUM_FRAMES = 21
-MAX_FORCE = 50.0  # Increased for stronger spring effect
-COLLISION_SLOWDOWN = 0.1  # Further slowed down for stability
-SPRING_STRENGTH = 5.0  # Increased for more visible spring effect
-DEADZONE_REPULSION = 1000.0  # Very high to absolutely prevent entry
+MAX_FORCE = 50.0
+COLLISION_SLOWDOWN = 0.1
+SPRING_STRENGTH = 5.0
+DEADZONE_REPULSION = 1000.0
 
 class Mass:
     def __init__(self, x, y, mass=1.0, fixed=False):
@@ -41,12 +41,15 @@ class Simulation:
         self.deadzones = deadzones
         self.dt = 1.0 / FPS
         self.collision_detected = False
+        self.speed = 1.0
+        self.gravity = 0.0
+        self.floor_y = HEIGHT // 2
         
         # Create masses for frames
         for i in range(num_frames):
             x = i * (WIDTH / (num_frames - 1))
             fixed = (i == 0 or i == num_frames - 1)  # Fix first and last frames
-            self.masses.append(Mass(x, HEIGHT // 2, mass=0.1, fixed=fixed))
+            self.masses.append(Mass(x, self.floor_y, mass=0.1, fixed=fixed))
         
         # Create springs between adjacent masses
         for i in range(num_frames - 1):
@@ -56,19 +59,20 @@ class Simulation:
         # Align deadzone centers
         max_radius = max(dz.radius for dz in self.deadzones)
         for dz in self.deadzones:
-            dz.y = HEIGHT // 2 + max_radius
+            dz.y = HEIGHT
 
     def update(self):
         # Move deadzones upward
-        if all(dz.y > HEIGHT // 2 for dz in self.deadzones):
+        if all(dz.y > self.floor_y for dz in self.deadzones):
             for deadzone in self.deadzones:
-                deadzone.y -= 0.5
+                deadzone.y -= 0.5 * self.speed
 
         # Check for collisions
         self.collision_detected = self.check_collisions()
 
         # Adjust time step if collision is detected
         dt = self.dt * COLLISION_SLOWDOWN if self.collision_detected else self.dt
+        dt *= self.speed  # Apply speed factor
 
         # Calculate forces
         for mass in self.masses:
@@ -76,17 +80,23 @@ class Simulation:
                 mass.vx *= 0.99  # Damping
                 mass.vy *= 0.99  # Damping
                 
+                # Apply gravity
+                mass.vy += self.gravity * dt
+                
                 # Apply spring forces
                 for spring in self.springs:
-                    if spring.mass1 == mass or spring.mass2 == mass:
-                        other = spring.mass2 if spring.mass1 == mass else spring.mass1
-                        dx = other.x - mass.x
-                        dy = other.y - mass.y
-                        distance = math.sqrt(dx*dx + dy*dy)
-                        force = spring.k * (distance - spring.rest_length)
-                        force = max(min(force, MAX_FORCE), -MAX_FORCE)
-                        mass.vx += force * dx / distance / mass.mass * dt
-                        mass.vy += force * dy / distance / mass.mass * dt
+                    dx = spring.mass2.x - spring.mass1.x
+                    dy = spring.mass2.y - spring.mass1.y
+                    distance = math.sqrt(dx*dx + dy*dy)
+                    force = spring.k * (distance - spring.rest_length)
+                    force = max(min(force, MAX_FORCE), -MAX_FORCE)
+
+                    if not spring.mass1.fixed:
+                        spring.mass1.vx += force * dx / distance / spring.mass1.mass * dt
+                        spring.mass1.vy += force * dy / distance / spring.mass1.mass * dt
+                    if not spring.mass2.fixed:
+                        spring.mass2.vx += force * dx / distance / spring.mass2.mass * dt
+                        spring.mass2.vy += force * dy / distance / spring.mass2.mass * dt
                 
                 # Apply deadzone repulsion
                 for deadzone in self.deadzones:
@@ -104,9 +114,9 @@ class Simulation:
                 mass.x += mass.vx * dt
                 mass.y += mass.vy * dt
                 
-                # Keep masses within screen boundaries
+                # Keep masses within screen boundaries and above floor
                 mass.x = max(0, min(mass.x, WIDTH))
-                mass.y = max(0, min(mass.y, HEIGHT))
+                mass.y = min(mass.y, self.floor_y)  # Prevent going below floor
 
         # Final collision check and correction
         self.resolve_collisions()
@@ -131,6 +141,7 @@ class Simulation:
                         overlap = deadzone.radius + 5 - distance
                         mass.x += overlap * dx / distance
                         mass.y += overlap * dy / distance
+                        mass.y = min(mass.y, self.floor_y)  # Ensure it doesn't go below floor
 
 class Application(tk.Tk):
     def __init__(self):
@@ -147,7 +158,19 @@ class Application(tk.Tk):
         ]
         self.sim = Simulation(NUM_FRAMES, deadzones)
 
+        self.bind('<Key>', self.on_key_press)
+
         self.update_simulation()
+
+    def on_key_press(self, event):
+        if event.char == 'w':
+            self.sim.speed *= 1.1
+        elif event.char == 's':
+            self.sim.speed /= 1.1
+        elif event.char == 'a':
+            self.sim.gravity -= 0.1
+        elif event.char == 'd':
+            self.sim.gravity += 0.1
 
     def update_simulation(self):
         self.sim.update()
@@ -182,6 +205,15 @@ class Application(tk.Tk):
                 mass.x-3, mass.y-3, mass.x+3, mass.y+3,
                 fill=color, outline=color
             )
+
+        # Draw floor line
+        self.canvas.create_line(0, self.sim.floor_y, WIDTH, self.sim.floor_y, fill="gray")
+
+        # Display speed and gravity
+        self.canvas.create_text(10, HEIGHT-20, anchor="w", fill="white", 
+                                text=f"Speed: {self.sim.speed:.2f}")
+        self.canvas.create_text(WIDTH-10, HEIGHT-20, anchor="e", fill="white", 
+                                text=f"Gravity: {self.sim.gravity:.2f}")
 
 def main():
     app = Application()
