@@ -36,6 +36,7 @@ class Deadzone:
         self.end = end
         self.y = 0  # Will be set in the Simulation class
         self.height = 0  # Will be set in the Simulation class
+        self.initial_y = 0  # To store the initial y position
 
 class Simulation:
     def __init__(self, num_frames, num_images, deadzones, width, height):
@@ -72,12 +73,13 @@ class Simulation:
             base_width = end_x - start_x
             max_base_width = max(max_base_width, base_width)
         
-        max_height = max_base_width * 0.5  # Adjust this factor to change the height of the shape
+        max_height = max_base_width * 0.75  # Adjust this factor to change the height of the shape
 
         # Set the height for all deadzones
         for deadzone in deadzones:
             deadzone.height = max_height
-            deadzone.y = self.floor_y + max_height  # Start below the floor
+            deadzone.y = self.floor_y + max_height
+            deadzone.initial_y = deadzone.y
 
         # Create masses for images
         for i in range(num_images):
@@ -152,13 +154,13 @@ class Simulation:
                     base_width = end_x - start_x
                     if start_x - MASS_RADIUS <= new_x <= end_x + MASS_RADIUS:
                         relative_x = (new_x - start_x) / base_width
-                        shape_y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**4)
+                        shape_y = deadzone.y - deadzone.height * (1 - abs(2*relative_x-1))
                         if new_y >= shape_y - MASS_RADIUS:
                             if relative_x < 0 or relative_x > 1:
                                 normal_x = 1 if relative_x < 0 else -1
                                 normal_y = 0
                             else:
-                                normal_x = -8 * (2*relative_x-1)**3 / base_width
+                                normal_x = -2 * math.copysign(1, 2*relative_x-1) / base_width
                                 normal_y = -1
                                 normal_length = math.sqrt(normal_x**2 + normal_y**2)
                                 normal_x /= normal_length
@@ -275,7 +277,7 @@ class Application(tk.Tk):
             for i in range(21):
                 relative_x = i / 20
                 x = start_x + relative_x * base_width
-                y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**4)
+                y = deadzone.y - deadzone.height * (1 - abs(2*relative_x-1))
                 points.extend([x, y])
             points.extend([end_x, deadzone.y, start_x, deadzone.y])
             self.canvas.create_polygon(points, fill="red", outline="red")
