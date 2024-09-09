@@ -7,7 +7,7 @@ import argparse
 import os
 
 # Constants
-WIDTH, HEIGHT = 800, 600
+DEFAULT_WIDTH, DEFAULT_HEIGHT = 800, 600
 FPS = 60
 EPSILON = 1e-6
 DEFAULT_NUM_FRAMES = 155
@@ -34,11 +34,11 @@ class Deadzone:
     def __init__(self, start, end):
         self.start = start
         self.end = end
-        self.y = HEIGHT  # Start below the screen
+        self.y = 0  # Will be set in the Simulation class
         self.height = 0  # Will be set in the Simulation class
 
 class Simulation:
-    def __init__(self, num_frames, num_images, deadzones):
+    def __init__(self, num_frames, num_images, deadzones, width, height):
         self.num_frames = num_frames
         self.num_images = num_images
         self.masses = []
@@ -47,8 +47,13 @@ class Simulation:
         self.dt = 1.0 / FPS
         self.speed = 1.0
         self.gravity = 0.0
-        self.floor_y = HEIGHT // 2
         self.spring_strength = INITIAL_SPRING_STRENGTH
+        self.width = width
+        self.height = height
+        self.floor_y = self.height // 2
+        self.auto_gravity = True
+        self.auto_gravity_step = 0.01
+        self.stability_counter = 0
 
         # Find the first and last available frames
         self.first_available_frame = 0
@@ -67,7 +72,7 @@ class Simulation:
             base_width = end_x - start_x
             max_base_width = max(max_base_width, base_width)
         
-        max_height = max_base_width * 0.75  # Adjust this factor to change the height of the shape
+        max_height = max_base_width * 0.5  # Adjust this factor to change the height of the shape
 
         # Set the height for all deadzones
         for deadzone in deadzones:
@@ -76,8 +81,8 @@ class Simulation:
 
         # Create masses for images
         for i in range(num_images):
-            x = i * (WIDTH / (num_images - 1))
-            fixed = (i == 0 or i == num_images - 1)  # Fix first and last images
+            x = i * (self.width / (num_images - 1))
+            fixed = (i == 0 or i == num_images - 1)
             self.masses.append(Mass(x, self.floor_y, mass=0.1, fixed=fixed))
 
         # Create springs between adjacent masses
@@ -86,10 +91,10 @@ class Simulation:
             self.springs.append(Spring(self.masses[i], self.masses[i+1], rest_length))
 
     def frame_to_x(self, frame):
-        return (frame - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
+        return (frame - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * self.width
 
     def x_to_frame(self, x):
-        return self.first_available_frame + (x / WIDTH) * (self.last_available_frame - self.first_available_frame)
+        return self.first_available_frame + (x / self.width) * (self.last_available_frame - self.first_available_frame)
 
     def update(self):
         # Move deadzones upward
@@ -106,9 +111,9 @@ class Simulation:
             for deadzone in self.deadzones:
                 deadzone.y = self.floor_y
 
-        dt = self.dt  # Use constant time step
+        dt = self.dt
 
-        # Apply forces
+        total_movement = 0
         for mass in self.masses:
             if not mass.fixed:
                 # Reset accelerations
@@ -136,9 +141,7 @@ class Simulation:
                 mass.vx *= 0.99
                 mass.vy *= 0.99
 
-        # Update positions and handle collisions
-        for mass in self.masses:
-            if not mass.fixed:
+                old_x, old_y = mass.x, mass.y
                 new_x = mass.x + mass.vx * dt * self.speed
                 new_y = mass.y + mass.vy * dt * self.speed
 
@@ -147,17 +150,15 @@ class Simulation:
                     start_x = self.frame_to_x(deadzone.start - 0.7)
                     end_x = self.frame_to_x(deadzone.end + 0.7)
                     base_width = end_x - start_x
-                    if start_x <= new_x <= end_x:
+                    if start_x - MASS_RADIUS <= new_x <= end_x + MASS_RADIUS:
                         relative_x = (new_x - start_x) / base_width
-                        # Custom shape function
-                        shape_y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**2)
-                        if new_y >= shape_y:
-                            # Calculate normal vector of the surface
-                            if relative_x < 0.1 or relative_x > 0.9:
-                                normal_x = 0
-                                normal_y = -1
+                        shape_y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**4)
+                        if new_y >= shape_y - MASS_RADIUS:
+                            if relative_x < 0 or relative_x > 1:
+                                normal_x = 1 if relative_x < 0 else -1
+                                normal_y = 0
                             else:
-                                normal_x = -4 * (2*relative_x-1) / base_width
+                                normal_x = -8 * (2*relative_x-1)**3 / base_width
                                 normal_y = -1
                                 normal_length = math.sqrt(normal_x**2 + normal_y**2)
                                 normal_x /= normal_length
@@ -167,24 +168,40 @@ class Simulation:
                             dot_product = mass.vx * normal_x + mass.vy * normal_y
                             mass.vx -= dot_product * normal_x
                             mass.vy -= dot_product * normal_y
+                            new_x = max(start_x - MASS_RADIUS, min(new_x, end_x + MASS_RADIUS))
+                            new_y = min(new_y, shape_y - MASS_RADIUS - EPSILON)
 
-                            # Move the mass to the surface of the shape
-                            new_x = max(start_x, min(new_x, end_x))
-                            new_y = shape_y - EPSILON
-
-                # Keep masses within screen boundaries and above floor
-                new_x = max(0, min(new_x, WIDTH))
-                new_y = min(max(new_y, 0), self.floor_y)
+                new_x = max(MASS_RADIUS, min(new_x, self.width - MASS_RADIUS))
+                new_y = min(max(new_y, MASS_RADIUS), self.floor_y)
 
                 mass.x, mass.y = new_x, new_y
+                total_movement += math.sqrt((new_x - old_x)**2 + (new_y - old_y)**2)
 
-        # Check for instability and adjust speed if necessary
+        if self.auto_gravity:
+            if total_movement < 0.1:
+                self.stability_counter += 1
+                if self.stability_counter > 60:  # If stable for 1 second
+                    if self.check_masses_in_deadzones():
+                        self.gravity += self.auto_gravity_step
+                        self.stability_counter = 0
+                    else:
+                        self.auto_gravity = False
+            else:
+                self.stability_counter = 0
+
         if self.detect_instability():
             self.speed /= 2
             print(f"Instability detected. Speed reduced to {self.speed:.2f}")
 
+    def check_masses_in_deadzones(self):
+        for mass in self.masses:
+            for deadzone in self.deadzones:
+                if deadzone.start <= self.x_to_frame(mass.x) <= deadzone.end:
+                    return True
+        return False
+
     def detect_instability(self):
-        max_safe_distance = WIDTH / 3  # 1/3rd of the window width
+        max_safe_distance = self.width / 3
         for mass in self.masses:
             if (abs(mass.vx * self.dt) > max_safe_distance or
                 abs(mass.vy * self.dt) > max_safe_distance):
@@ -193,17 +210,33 @@ class Simulation:
 
     def adjust_spring_strength(self, delta):
         self.spring_strength += delta
-        self.spring_strength = max(0.1, self.spring_strength)  # Ensure it doesn't go negative
+        self.spring_strength = max(0.01, self.spring_strength)
+
+    def resize(self, width, height):
+        scale_x = width / self.width
+        scale_y = height / self.height
+        self.width = width
+        self.height = height
+        self.floor_y = self.height // 2
+        for mass in self.masses:
+            mass.x *= scale_x
+            mass.y *= scale_y
+        for spring in self.springs:
+            spring.rest_length *= scale_x
+        for deadzone in self.deadzones:
+            deadzone.y = self.floor_y + deadzone.height
+        self.auto_gravity = True
+        self.stability_counter = 0
 
 class Application(tk.Tk):
     def __init__(self, simulation):
         super().__init__()
         self.title("Frame Distribution Simulation")
-        self.geometry(f"{WIDTH}x{HEIGHT}")
-        self.canvas = tk.Canvas(self, width=WIDTH, height=HEIGHT, bg="black")
-        self.canvas.pack()
         self.sim = simulation
+        self.canvas = tk.Canvas(self, width=self.sim.width, height=self.sim.height, bg="black")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
         self.bind('<Key>', self.on_key_press)
+        self.bind('<Configure>', self.on_resize)
         self.update_simulation()
 
     def on_key_press(self, event):
@@ -219,6 +252,11 @@ class Application(tk.Tk):
             self.sim.adjust_spring_strength(-0.01)
         elif event.char == 'e':
             self.sim.adjust_spring_strength(0.01)
+
+    def on_resize(self, event):
+        if event.widget == self:
+            self.sim.resize(event.width, event.height)
+            self.canvas.config(width=event.width, height=event.height)
 
     def update_simulation(self):
         self.sim.update()
@@ -237,7 +275,7 @@ class Application(tk.Tk):
             for i in range(21):
                 relative_x = i / 20
                 x = start_x + relative_x * base_width
-                y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**2)
+                y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**4)
                 points.extend([x, y])
             points.extend([end_x, deadzone.y, start_x, deadzone.y])
             self.canvas.create_polygon(points, fill="red", outline="red")
@@ -265,11 +303,9 @@ class Application(tk.Tk):
                 fill="white"
             )
 
-        # Draw floor line
-        self.canvas.create_line(0, self.sim.floor_y, WIDTH, self.sim.floor_y, fill="gray")
+        self.canvas.create_line(0, self.sim.floor_y, self.sim.width, self.sim.floor_y, fill="gray")
 
-        # Display speed, gravity, and spring strength
-        self.canvas.create_text(10, HEIGHT-20, anchor="w", fill="white", 
+        self.canvas.create_text(10, self.sim.height-20, anchor="w", fill="white", 
                                 text=f"Speed: {self.sim.speed:.2f}, Gravity: {self.sim.gravity:.2f}, Spring: {self.sim.spring_strength:.2f}")
 
 def read_deadzones(filename):
@@ -296,7 +332,7 @@ def main():
 
     windows_path = convert_path(args.deadzone_file)
     deadzones = read_deadzones(windows_path)
-    sim = Simulation(args.num_frames, args.num_images, deadzones)
+    sim = Simulation(args.num_frames, args.num_images, deadzones, DEFAULT_WIDTH, DEFAULT_HEIGHT)
     app = Application(sim)
     app.mainloop()
 
