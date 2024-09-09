@@ -33,7 +33,7 @@ class Spring:
 class Deadzone:
     def __init__(self, start, end):
         self.start = start
-        self.end = end + 1  # Include the end frame in the deadzone
+        self.end = end
         self.y = HEIGHT  # Start below the screen
         self.height = 0  # Will be set in the Simulation class
 
@@ -55,19 +55,19 @@ class Simulation:
         self.last_available_frame = num_frames - 1
         for deadzone in deadzones:
             if deadzone.start == 0:
-                self.first_available_frame = deadzone.end
+                self.first_available_frame = deadzone.end + 1
             if deadzone.start < num_frames and deadzone.end >= num_frames:
                 self.last_available_frame = deadzone.start - 1
 
-        # Calculate the maximum triangle height
+        # Calculate the maximum deadzone height
         max_base_width = 0
         for deadzone in deadzones:
-            start_x = (deadzone.start - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
-            end_x = (deadzone.end - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
+            start_x = self.frame_to_x(deadzone.start - 0.7)
+            end_x = self.frame_to_x(deadzone.end + 0.7)
             base_width = end_x - start_x
             max_base_width = max(max_base_width, base_width)
         
-        max_height = max_base_width * math.sqrt(3) / 2
+        max_height = max_base_width * 0.75  # Adjust this factor to change the height of the shape
 
         # Set the height for all deadzones
         for deadzone in deadzones:
@@ -84,6 +84,12 @@ class Simulation:
         for i in range(num_images - 1):
             rest_length = self.masses[i+1].x - self.masses[i].x
             self.springs.append(Spring(self.masses[i], self.masses[i+1], rest_length))
+
+    def frame_to_x(self, frame):
+        return (frame - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
+
+    def x_to_frame(self, x):
+        return self.first_available_frame + (x / WIDTH) * (self.last_available_frame - self.first_available_frame)
 
     def update(self):
         # Move deadzones upward
@@ -138,28 +144,33 @@ class Simulation:
 
                 # Check for collisions with deadzones
                 for deadzone in self.deadzones:
-                    start_x = (deadzone.start - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
-                    end_x = (deadzone.end - self.first_available_frame) / (self.last_available_frame - self.first_available_frame) * WIDTH
+                    start_x = self.frame_to_x(deadzone.start - 0.7)
+                    end_x = self.frame_to_x(deadzone.end + 0.7)
                     base_width = end_x - start_x
                     if start_x <= new_x <= end_x:
                         relative_x = (new_x - start_x) / base_width
-                        triangle_y = deadzone.y - deadzone.height * (1 - abs(2 * relative_x - 1))
-                        if new_y >= triangle_y:
-                            # Calculate normal vector of the triangle surface
-                            normal_x = 2 * relative_x - 1
-                            normal_y = -math.sqrt(3) / 2
-                            normal_length = math.sqrt(normal_x**2 + normal_y**2)
-                            normal_x /= normal_length
-                            normal_y /= normal_length
+                        # Custom shape function
+                        shape_y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**2)
+                        if new_y >= shape_y:
+                            # Calculate normal vector of the surface
+                            if relative_x < 0.1 or relative_x > 0.9:
+                                normal_x = 0
+                                normal_y = -1
+                            else:
+                                normal_x = -4 * (2*relative_x-1) / base_width
+                                normal_y = -1
+                                normal_length = math.sqrt(normal_x**2 + normal_y**2)
+                                normal_x /= normal_length
+                                normal_y /= normal_length
 
                             # Project velocity onto the surface
                             dot_product = mass.vx * normal_x + mass.vy * normal_y
                             mass.vx -= dot_product * normal_x
                             mass.vy -= dot_product * normal_y
 
-                            # Move the mass to the surface of the triangle
+                            # Move the mass to the surface of the shape
                             new_x = max(start_x, min(new_x, end_x))
-                            new_y = triangle_y - EPSILON
+                            new_y = shape_y - EPSILON
 
                 # Keep masses within screen boundaries and above floor
                 new_x = max(0, min(new_x, WIDTH))
@@ -219,14 +230,17 @@ class Application(tk.Tk):
 
         # Draw deadzones
         for deadzone in self.sim.deadzones:
-            start_x = (deadzone.start - self.sim.first_available_frame) / (self.sim.last_available_frame - self.sim.first_available_frame) * WIDTH
-            end_x = (deadzone.end - self.sim.first_available_frame) / (self.sim.last_available_frame - self.sim.first_available_frame) * WIDTH
-            self.canvas.create_polygon(
-                start_x, deadzone.y,
-                end_x, deadzone.y,
-                (start_x + end_x) / 2, deadzone.y - deadzone.height,
-                fill="red", outline="red"
-            )
+            start_x = self.sim.frame_to_x(deadzone.start - 0.7)
+            end_x = self.sim.frame_to_x(deadzone.end + 0.7)
+            base_width = end_x - start_x
+            points = []
+            for i in range(21):
+                relative_x = i / 20
+                x = start_x + relative_x * base_width
+                y = deadzone.y - deadzone.height * (1 - (2*relative_x-1)**2)
+                points.extend([x, y])
+            points.extend([end_x, deadzone.y, start_x, deadzone.y])
+            self.canvas.create_polygon(points, fill="red", outline="red")
 
         # Draw springs
         for spring in self.sim.springs:
@@ -244,7 +258,7 @@ class Application(tk.Tk):
                 mass.x + MASS_RADIUS, mass.y + MASS_RADIUS,
                 fill=color, outline=color
             )
-            frame_number = self.sim.first_available_frame + (mass.x / WIDTH) * (self.sim.last_available_frame - self.sim.first_available_frame)
+            frame_number = self.sim.x_to_frame(mass.x)
             self.canvas.create_text(
                 mass.x, mass.y - 20,
                 text=f"{frame_number:.1f}",
