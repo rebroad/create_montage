@@ -63,7 +63,12 @@ class Simulation:
             if deadzone.y > self.floor_y:
                 deadzone.y -= 0.5 * self.speed
 
-        dt = self.dt * self.speed
+        # Check for collisions
+        self.collision_detected = self.check_collisions()
+
+        # Adjust time step if collision is detected
+        dt = self.dt * COLLISION_SLOWDOWN if self.collision_detected else self.dt
+        dt *= self.speed  # Apply speed factor
 
         # Apply forces
         for mass in self.masses:
@@ -106,6 +111,39 @@ class Simulation:
                 # Keep masses within screen boundaries and above floor
                 mass.x = max(0, min(mass.x, WIDTH))
                 mass.y = min(max(mass.y, 0), self.floor_y)
+
+        # Resolve collisions
+        self.resolve_collisions()
+
+    def check_collisions(self):
+        for mass in self.masses:
+            for deadzone in self.deadzones:
+                dx = mass.x - deadzone.center_x
+                dy = mass.y - deadzone.y
+                distance = math.sqrt(dx*dx + dy*dy)
+                if distance < deadzone.radius + 5:  # 5 is the mass radius
+                    return True
+        return False
+
+    def resolve_collisions(self):
+        for mass in self.masses:
+            if not mass.fixed:
+                for deadzone in self.deadzones:
+                    dx = mass.x - deadzone.center_x
+                    dy = mass.y - deadzone.y
+                    distance = math.sqrt(dx*dx + dy*dy + EPSILON)
+                    if distance < deadzone.radius + 5:  # 5 is the mass radius
+                        overlap = deadzone.radius + 5 - distance
+                        mass.x += overlap * dx / distance
+                        mass.y += overlap * dy / distance
+                        # Reflect velocity to bounce off the deadzone
+                        normal_x, normal_y = dx / distance, dy / distance
+                        dot_product = mass.vx * normal_x + mass.vy * normal_y
+                        mass.vx -= 2 * dot_product * normal_x
+                        mass.vy -= 2 * dot_product * normal_y
+                        # Apply some velocity damping on collision
+                        mass.vx *= 0.9
+                        mass.vy *= 0.9
 
 class Application(tk.Tk):
     def __init__(self):
