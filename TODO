@@ -1,1 +1,4 @@
 Add the option to add a 2nd spring, connecting masses to neighbours of neighbours. Have the ability to change the strength of these secondary springs. Also have the option to change spring forces to be non-linear.
+Add a velocity limiter - or notify on extreme velocities or accelerations
+
+Fix to the 2nd algorithm - when calculating density (to decide where to move images), use the AVAILABLE_FRAMES each side factoring in all the deadzones. Then I suspect it will work perfectly and it'll avoid the issue of squashed frames.
