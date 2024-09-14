@@ -115,7 +115,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         step = (end_frame - start_frame) / (end_image - start_image)
         print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.2f}")
 
-        for i in range(start_image, end_image + direction, direction):
+        for i in range(start_image, end_image, direction):
             frame = int(start_frame + ((i - start_image) * step) + 0.5)
             if jump == 0:
                 jump = frame - image[i]
@@ -196,7 +196,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
         sub_jump, sub_step = dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
     else:
-        print("No left side to process")
+        print("Nothing to move left...")
     if move_right > 0 or (sub_jump != 0 and images_right > 0):
         print("Processing right side")
         if sub_jump != 0:
