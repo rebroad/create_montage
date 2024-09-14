@@ -98,7 +98,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         end_image = TOTAL_IMAGES - 1
     iter = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else iter + 1
     if iter == 1:
-        image = [-1] * TOTAL_IMAGES
+        image = [TOTAL_FRAMES - 1] * TOTAL_IMAGES
     print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
 
     jump, step = 0, 0
@@ -138,7 +138,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
 
     if not best_deadzone:
         print(f"No deadzones within frames {min_frame} to {max_frame}")
-        return 0, 0
+        return jump, step
 
     dead_start, dead_end = best_deadzone
     print(f"Processing deadzone: {dead_start}:{dead_end}")
@@ -196,7 +196,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
         sub_jump, sub_step = dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
     else:
-        print("Nothing to move left...")
+        print(f"Nothing to move left... (within {min_frame}:{max_frame})")
     if move_right > 0 or (sub_jump != 0 and images_right > 0):
         print("Processing right side")
         if sub_jump != 0:
@@ -209,11 +209,12 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 print("DIFFERENT!")
         else:
             erm = dead_end + 1
-        print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
+        print(f"Right dist_images: frames: {erm}:{max_frame} (within {min_frame}:{max_frame}) images: {right_start_image - move_right}-{max_image}")
         if (erm == image[right_start_image - move_right]):
             print(f"erm={erm} == first_right already so skipping processing")
             return jump, step
         sub_jump, sub_step = dist_images(erm, max_frame, right_start_image - move_right, max_image)
+        print(f"After right dist_images ({min_frame}:{max_frame}). move_left={move_left} images_left={images_left}")
         if move_left == 0 and images_left > 0:
             step_erm = dead_end + 1 - sub_step
             jump_erm = image[left_end_image] + sub_jump
