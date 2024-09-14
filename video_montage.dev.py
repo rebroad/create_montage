@@ -138,7 +138,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
 
     if not best_deadzone:
         print(f"No deadzones within frames {min_frame} to {max_frame}")
-        return
+        return 0, 0
 
     dead_start, dead_end = best_deadzone
     print(f"Processing deadzone: {dead_start}:{dead_end}")
@@ -231,7 +231,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"For range final: {min_frame} to {max_frame}")
     print(f"Selected frames: {' '.join(map(str, image))}")
 
-    print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={this_jump}")
+    print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={jump} this_step={step:.2f}")
     return jump, step
 
 def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows=None):
