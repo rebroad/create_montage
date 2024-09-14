@@ -92,7 +92,6 @@ def add_deadzone(start, end=None):
 
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     global image, step, iter
-    start_frame = max(0, start_frame)
     if end_frame is None:
         end_frame = TOTAL_FRAMES - 1
     if end_image is None:
@@ -209,15 +208,15 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             if int(step_erm + 0.5) != jump_erm:
                 print("DIFFERENT!")
         else:
-            erm = dead_end + 1,
+            erm = dead_end + 1
         print(f"Right dist_images: frames: {erm} to {max_frame} images: {right_start_image - move_right} to {max_image} (within {min_frame} to {max_frame} run)")
         if (erm == image[right_start_image - move_right]):
             print(f"erm={erm} == first_right already so skipping processing")
             return jump, step
-        sub_jump = dist_images(erm, max_frame, right_start_image - move_right, max_image)
+        sub_jump, sub_step = dist_images(erm, max_frame, right_start_image - move_right, max_image)
         if move_left == 0 and images_left > 0:
-            step_erm = dead_end + 1 - step
-            jump_erm = image[left_end_image] + last_jump
+            step_erm = dead_end + 1 - sub_step
+            jump_erm = image[left_end_image] + sub_jump
             erm = min(dead_start - 1, int((step_erm + jump_erm) / 2 + 0.5))
             print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. jump={sub_jump} step={sub_step:.2f}")
             print(f"    first_right={dead_end + 1} last_last={image[left_end_image]} erm={erm} jump_erm={jump_erm} step_erm={step_erm:.2f}")
@@ -326,6 +325,7 @@ for arg in sys.argv[1:]:
 if VID is None:
     print("Error: Video file not specified.")
     sys.exit(1)
+VID = convert_path(VID)
 if not os.path.isfile(VID):
     print(f"Error: Video file '{VID}' does not exist.")
     sys.exit(1)
