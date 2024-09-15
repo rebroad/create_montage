@@ -231,10 +231,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
     else:
         print(f"Apparently no need to call right dist_images. step={step:.2f} dead_end={dead_end} images_right={images_right}")
-    print(f"Exiting frame_dist for range: {min_frame} to {max_frame}")
-
-    print(f"For range final: {min_frame} to {max_frame}")
-    print(f"Selected frames: {' '.join(map(str, image))}")
 
     print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={jump} this_step={step:.2f}")
     return jump, step
@@ -405,7 +401,28 @@ if TOTAL_IMAGES > TOTAL_FRAMES:
     print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
     sys.exit(1)
 
+def display_video_timeline(total_frames, deadzones, selected_frames):
+    # Create the base timeline
+    timeline = ['-'] * total_frames
+    
+    # Mark deadzones
+    for start, end in deadzones:
+        for i in range(start, min(end + 1, total_frames)):
+            timeline[i] = '#'
+    
+    # Mark selected frames
+    for frame in selected_frames:
+        if 0 <= frame < total_frames:
+            timeline[frame] = 'X'
+    
+    # Convert timeline to string and add markers
+    timeline_str = ''.join(timeline)
+    marker_line = ''.join([str(i % 10) for i in range(total_frames)])
+    
+    print(timeline_str)
+
 dist_images()
+display_video_timeline(TOTAL_FRAMES, deadzones, image)
 if INTERACTIVE_MODE:
     while True:
         print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
