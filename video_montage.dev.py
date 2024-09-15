@@ -46,7 +46,8 @@ COLS, ROWS = 0, 0
 
 def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None):
     available_frames = available_frames or AVAILABLE_FRAMES
-    print(f"Searching for optimal grid for {WIDTH}:{HEIGHT} aspect ratio")
+    if target_rows == None and target_cols == None:
+        print(f"Searching for optimal grid for {WIDTH}:{HEIGHT} aspect ratio")
     best_diff = float('inf')
     TARGET_RATIO = WIDTH / HEIGHT
     start_y, end_y = (target_rows, target_rows) if target_rows else (1, available_frames)
@@ -62,11 +63,11 @@ def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None)
             if diff < best_diff:
                 best_diff = diff
                 best_grid = (x, y)
-                print("BEST! ", end="")
+                logprint(2, "BEST! ", end="")
             elif LAST_X_DIFF < diff:
-                print(f"x={x} y={y} diff={diff:.10f} - XBreak")
+                logprint(2, f"x={x} y={y} diff={diff:.10f} - XBreak")
                 break
-            print(f"x={x} y={y} diff={diff:.10f}")
+            logprint(2, f"x={x} y={y} diff={diff:.10f}")
             LAST_X_DIFF = diff
 
     return best_grid
@@ -461,14 +462,6 @@ def check_grid():
     print(f"Grid set to: {COLS}x{ROWS}")
     return True
 
-if GRID:
-    set_grid(GRID)
-elif ASPECT_RATIO:
-    COLS, ROWS = find_optimal_grid()
-else:
-    print("No grid or aspect ratio specified. Using default 2 row grid.")
-    COLS, ROWS = find_optimal_grid(target_rows=2)
-
 def display_video_timeline(total_frames, deadzones, selected_frames):
     # Create the base timeline
     timeline = ['-'] * total_frames
@@ -493,14 +486,19 @@ def display_video_timeline(total_frames, deadzones, selected_frames):
 if ALGO_TEST:
     for num_images in range(21, 1, -1):
         TOTAL_IMAGES = num_images
-        COLS, ROWS = find_optimal_grid(num_images)
+        COLS, ROWS = num_images, 1
         dist_images()
         display_video_timeline(TOTAL_FRAMES, deadzones, image)
-        print(f"Number of images: {num_images}")
-        print("Frame numbers:", " ".join(map(str, image)))
-        print("Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
-        print()
+        print(f"Number of images: {num_images}, Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
 else:
+    if GRID:
+        set_grid(GRID)
+    elif ASPECT_RATIO:
+        COLS, ROWS = find_optimal_grid()
+    else:
+        print("No grid or aspect ratio specified. Using default 2 row grid.")
+        COLS, ROWS = find_optimal_grid(target_rows=2)
+
     dist_images()
     display_video_timeline(TOTAL_FRAMES, deadzones, image)
     if INTERACTIVE_MODE:
