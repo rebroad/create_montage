@@ -145,7 +145,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 skip = 0
             image[i] = frame
 
-    logprint(2, f"Evenly dist frames: {' '.join(map(str, image))}")
+    display_video_timeline(image, 2)
 
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
     logprint(2, f"Finding largest deadzone within frames {min_frame} to {max_frame}")
@@ -433,7 +433,7 @@ def set_grid(new_grid):
     print(f"Grid set to: {COLS}x{ROWS}")
     return True
 
-def display_video_timeline(selected_frames):
+def display_video_timeline(selected_frames, debug=0):
     # Create the base timeline
     timeline = ['-'] * TOTAL_FRAMES
     
@@ -454,7 +454,7 @@ def display_video_timeline(selected_frames):
     timeline_str = ''.join(timeline)
     marker_line = ''.join([str(i % 10) for i in range(TOTAL_FRAMES)])
     
-    print(timeline_str)
+    logprint(debug, timeline_str)
 
 if ALGO_TEST:
     wins = {1: 0, 2: 0, "tie": 0}
