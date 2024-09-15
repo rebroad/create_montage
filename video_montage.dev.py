@@ -434,38 +434,66 @@ def set_grid(new_grid):
     print(f"Grid set to: {COLS}x{ROWS}")
     return True
 
-def display_video_timeline(total_frames, deadzones, selected_frames):
+def display_video_timeline(selected_frames):
     # Create the base timeline
-    timeline = ['-'] * total_frames
+    timeline = ['-'] * TOTAL_FRAMES
     
     # Mark deadzones
     for start, end in deadzones:
-        for i in range(start, min(end + 1, total_frames)):
+        for i in range(start, min(end + 1, TOTAL_FRAMES)):
             timeline[i] = '#'
     
     # Mark selected frames
     for frame in selected_frames:
-        if 0 <= frame < total_frames:
-            timeline[frame] = 'X'
+        if 0 <= frame < TOTAL_FRAMES:
+            if timeline[frame] != '-':
+                timeline[frame] = 'X'
+            else:
+                timeline[frame] = 'x'
     
     # Convert timeline to string and add markers
     timeline_str = ''.join(timeline)
-    marker_line = ''.join([str(i % 10) for i in range(total_frames)])
+    marker_line = ''.join([str(i % 10) for i in range(TOTAL_FRAMES)])
     
     print(timeline_str)
 
-
 if ALGO_TEST:
+    wins = {1: 0, 2: 0, "tie": 0}
+    results = []
     for num_images in range(21, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
-        for ALGORITHM in range(1, 3, 1):
+        algo_results = {}
+        for ALGORITHM in [1, 2]:
             dist_images()
-            display_video_timeline(TOTAL_FRAMES, deadzones, image)
             gaps = [image[i+1] - image[i] - 1 for i in range(len(image)-1)]
             avg_gap = sum(gaps) / len(gaps)
-            gap_variance = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
-            print(f"Algo={ALGORITHM} Num_images={num_images} Avg_gap={avg_gap} Gap_variance={gap_variance} Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
+            variance = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
+            algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": variance}
+
+        if algo_results[1]["variance"] < algo_results[2]["variance"]:
+            winner = 1
+            wins[1] += 1
+        elif algo_results[2]["variance"] < algo_results[1]["variance"]:
+            winner = 2
+            wins[2] += 1
+        else:
+            winner = "tie"
+            wins["tie"] += 1
+
+        results.append((num_images, winner, algo_results))
+
+    print("\nAlgorithm Test Results:")
+    print("=" * 50)
+    for num_images, winner, algo_results in results:
+        if winner == "tie" and algo_results[1]["gaps"] == algo_results[2]["gaps"]:
+            display_video_timeline(algo_results[1]['image']) # 'image' or "image"?
+            print(f"num_images={num_images} algo=1&2 variance={algo_results[1]['variance']:.4f} gaps:", " ".join(map(str, algo_results[1]["gaps"])))
+        else:
+            for algo in [1, 2]:
+                display_video_timeline(algo_results[algo]['image']) # 'image' or "image"?
+                print(f"num_images={num_images} algo={algo} variance={algo_results[algo]['variance']:.4f} gaps:", " ".join(map(str, algo_results[algo]["gaps"])))
+    print("\nSummary: Algo1_wins={wins[1]} Algo2_wins={wins[2]} Ties={wins['tie'}")
 else:
     if GRID:
         set_grid(GRID)
