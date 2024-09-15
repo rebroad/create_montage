@@ -101,6 +101,10 @@ def count_available_frames(start, end):
         available -= (overlap_end - overlap_start + 1)
     return available
 
+def logprint(level, *args, **kwargs):
+    if DEBUG_LEVEL >= level:
+        print(*args, **kwargs)
+
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     global image, iter
     if end_frame is None:
@@ -110,7 +114,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     iter = 1 if start_frame == 0 and end_frame == TOTAL_FRAMES - 1 else iter + 1
     if iter == 1:
         image = [TOTAL_FRAMES - 1] * TOTAL_IMAGES
-    #print(f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
+    logprint(2, f"Entering dist_images: frames={start_frame}-{end_frame} images={start_image}-{end_image} iter={iter}")
 
     jump, step = 0, 0
     if start_image == end_image:
@@ -118,32 +122,32 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         if 0 < frame < TOTAL_FRAMES - 1:
             image[i] = (start_frame + end_frame) // 2
             jump = image[i] - frame
-            #print(f"image={i} frame: {frame} -> {image[i]} (center of {start_frame}:{end_frame})")
-        #else:
-            #print(f"Keep image {start_image} at its current position ({image[start_image]}) as it's special.")
+            logprint(2, f"image={i} frame: {frame} -> {image[i]} (center of {start_frame}:{end_frame})")
+        else:
+            logprint(2, f"Keep image {start_image} at its current position ({image[start_image]}) as it's special.")
     else:
         direction = 1 if end_image > start_image else -1
         step, skip = (end_frame - start_frame) / (end_image - start_image), 0
-        #print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.2f}")
+        logprint(2, f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.2f}")
 
         for i in range(start_image, end_image, direction):
             frame = int(start_frame + ((i - start_image) * step) + 0.5)
             if jump == 0:
                 jump = frame - image[i]
-            #print(f"image={i} frame: {image[i]} -> {frame}")
+            logprint(2, f"image={i} frame: {image[i]} -> {frame}")
             if image[i] == frame:
                 skip = skip + 1
                 if skip > 1:
-                    #print("Skip the rest as numbers match.")
+                    logprint(2, "Skip the rest as numbers match.")
                     break
             else:
                 skip = 0
             image[i] = frame
 
-    #print(f"Evenly dist frames: {' '.join(map(str, image))}")
+    logprint(2, f"Evenly dist frames: {' '.join(map(str, image))}")
 
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
-    #print(f"Finding largest deadzone within frames {min_frame} to {max_frame}")
+    logprint(2, f"Finding largest deadzone within frames {min_frame} to {max_frame}")
     center = (start_frame + end_frame) // 2
     best_deadzone = max(
         ((dead_start, dead_end) for dead_start, dead_end in deadzones if min_frame <= dead_end and dead_start <= max_frame),
@@ -152,11 +156,11 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     )
 
     if not best_deadzone:
-        #print(f"No deadzones within frames {min_frame} to {max_frame}")
+        logprint(2, f"No deadzones within frames {min_frame} to {max_frame}")
         return jump, step
 
     dead_start, dead_end = best_deadzone
-    print(f"Processing deadzone: {dead_start}:{dead_end}")
+    logprint(1, f"Processing deadzone: {dead_start}:{dead_end}")
 
     dead_images = 0
     images_left = 0
@@ -173,87 +177,113 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             right_start_image = i + 1
         elif image[i] > dead_end:
             images_right += 1
-    print(f"dead_images={dead_images} images_on_left={images_left} images_on_right={images_right}")
+    logprint(1, f"dead_images={dead_images} images_on_left={images_left} images_on_right={images_right}")
     if dead_images == 0:
-        #print(f"Exiting dist_images for {min_frame}:{max_frame} jump={jump} step={step:.2f}")
+        logprint(2, f"Exiting dist_images for {min_frame}:{max_frame} jump={jump} step={step:.2f}")
         return jump, step
 
     spaces_left = count_available_frames(min_frame, dead_start - 1)
     spaces_right = count_available_frames(dead_end + 1, max_frame)
-    print(f"spaces_left: {spaces_left}, spaces_right: {spaces_right}")
+    logprint(1, f"spaces_left: {spaces_left}, spaces_right: {spaces_right}")
 
     total_images = images_left + images_right + dead_images
     total_spaces = spaces_left + spaces_right
     ideal_step = total_spaces / (total_images - 1)
-    print(f"Ideal step: {ideal_step:.2f}")
-    move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
-    move_right = dead_images - move_left
+    logprint(1, f"Ideal step: {ideal_step:.2f}")
 
-    left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else 0
-    right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else 0
-    print(f"Claude algo: dead_images={dead_images} move_left={move_left} move_right={move_right} left_step={left_step:.2f} right_step={right_step:.2f}")
-
-    best_diff = float('inf')
-    best_move_left = 0
-    if spaces_left > 0 and spaces_right > 0:
-        for move_left in range(dead_images + 1):
-            move_right = dead_images - move_left
-            left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else (spaces_left * 1.5)
-            right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else (spaces_right * 1.5)
-            diff = (left_step - right_step) ** 2
-            if diff < best_diff:
-                best_diff = diff
-                best_move_left = move_left
-        move_left = best_move_left
+    if ALGORITHM == 1:
+        move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
         move_right = dead_images - move_left
-    elif spaces_left > 0:
-        move_left, move_right = dead_images, 0
-    elif spaces_right > 0:
-        move_left, move_right = 0, dead_images
+    elif ALGORITHM == 2:
+        best_diff = float('inf')
+        best_move_left = 0
+        if spaces_left > 0 and spaces_right > 0:
+            for move_left in range(dead_images + 1):
+                move_right = dead_images - move_left
+                left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else (spaces_left * 1.5)
+                right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else (spaces_right * 1.5)
+                diff = (left_step - right_step) ** 2
+                if diff < best_diff:
+                    best_diff = diff
+                    best_move_left = move_left
+            move_left = best_move_left
+            move_right = dead_images - move_left
+        elif spaces_left > 0:
+            move_left, move_right = dead_images, 0
+        elif spaces_right > 0:
+            move_left, move_right = 0, dead_images
+        else:
+            print("No adjacent spaces to move dead images to - need more algorithm!")
+            sys.exit(1)
+    elif ALGORITHM == 3:
+        # New algorithm aiming for more consistent gaps
+        total_gap = total_spaces
+        avg_gap = total_gap / (total_images - 1)
+        left_images = images_left + dead_images
+        right_images = images_right
+
+        if spaces_left >= spaces_right:
+            move_left = dead_images
+            move_right = 0
+        else:
+            move_left = int(dead_images * (spaces_left / total_spaces))
+            move_right = dead_images - move_left
+
+        left_gap = spaces_left / (left_images - 1) if left_images > 1 else 0
+        right_gap = spaces_right / (right_images - 1) if right_images > 1 else 0
+
+        # Adjust move_left and move_right to balance gaps
+        while abs(left_gap - right_gap) > 1 and move_left > 0 and move_right < dead_images:
+            if left_gap > right_gap:
+                move_left -= 1
+                move_right += 1
+            else:
+                move_left += 1
+                move_right -= 1
     else:
-        print("No adjacent spaces to move dead images to - need more algorithm!")
+        print(f"Invalid algorithm choice: {ALGORITHM}")
         sys.exit(1)
 
     left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else 0
     right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else 0
-    print(f"My algo: dead_images={dead_images} move_left={move_left} move_right={move_right} left_step={left_step:.2f} right_step={right_step:.2f}")
+    logprint(1, f"Algorithm {ALGORITHM}: dead_images={dead_images} move_left={move_left} move_right={move_right} left_step={left_step:.2f} right_step={right_step:.2f}")
 
-    #print("Recurse into new livezones")
+    logprint(2, "Recurse into new livezones")
     sub_jump = 0
     if move_left > 0:
-        #print(f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
+        logprint(2, f"Left dist_images {dead_start - 1} {min_frame} {left_end_image + move_left} {min_image}")
         sub_jump, sub_step = dist_images(dead_start - 1, min_frame, left_end_image + move_left, min_image)
-    #else:
-        #print(f"Nothing to move left... (within {min_frame}:{max_frame})")
+    else:
+        logprint(2, f"Nothing to move left... (within {min_frame}:{max_frame})")
     if move_right > 0 or (sub_jump != 0 and images_right > 0):
-        #print("Processing right side")
+        logprint(2, "Processing right side")
         if sub_jump != 0:
             step_erm = dead_start - 1 + sub_step
             jump_erm = image[right_start_image - move_right] + sub_jump
             erm = max(dead_end + 1, int((step_erm + jump_erm) / 2 + 0.5))
-            #print(f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. jump={sub_jump} step={sub_step:.2f}")
-            #print(f"    last_left={dead_start - 1} first_right={image[right_start_image - move_right]} erm={erm} jump_erm={jump_erm} step_erm={step_erm:.2f}")
-            #if int(step_erm + 0.5) != jump_erm:
-                #print("DIFFERENT!")
+            logprint(2, f"After left dist_images (frames {min_frame} to {dead_start - 1}) out of {min_frame} to {max_frame}. jump={sub_jump} step={sub_step:.2f}")
+            logprint(2, f"    last_left={dead_start - 1} first_right={image[right_start_image - move_right]} erm={erm} jump_erm={jump_erm} step_erm={step_erm:.2f}")
+            if int(step_erm + 0.5) != jump_erm:
+                logprint(2, "DIFFERENT!")
         else:
             erm = dead_end + 1
-        #print(f"Right dist_images: frames: {erm}:{max_frame} (within {min_frame}:{max_frame}) images: {right_start_image - move_right}-{max_image}")
+        logprint(2, f"Right dist_images: frames: {erm}:{max_frame} (within {min_frame}:{max_frame}) images: {right_start_image - move_right}-{max_image}")
         sub_jump, sub_step = dist_images(erm, max_frame, right_start_image - move_right, max_image)
-        #print(f"After right dist_images ({min_frame}:{max_frame}). move_left={move_left} images_left={images_left}")
+        logprint(2, f"After right dist_images ({min_frame}:{max_frame}). move_left={move_left} images_left={images_left}")
         if move_left == 0 and images_left > 0:
             step_erm = dead_end + 1 - sub_step
             jump_erm = image[left_end_image] + sub_jump
             erm = min(dead_start - 1, int((step_erm + jump_erm) / 2 + 0.5))
-            #print(f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. jump={sub_jump} step={sub_step:.2f}")
-            #print(f"    first_right={dead_end + 1} last_last={image[left_end_image]} erm={erm} jump_erm={jump_erm} step_erm={step_erm:.2f}")
-            #if int(step_erm + 0.5) != jump_erm:
-                #print("DIFFERENT!")
-            #print(f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
+            logprint(2, f"After right dist_images (frames {erm} to {max_frame}) out of {min_frame} to {max_frame}. jump={sub_jump} step={sub_step:.2f}")
+            logprint(2, f"    first_right={dead_end + 1} last_last={image[left_end_image]} erm={erm} jump_erm={jump_erm} step_erm={step_erm:.2f}")
+            if int(step_erm + 0.5) != jump_erm:
+                logprint(2, "DIFFERENT!")
+            logprint(2, f"Left dist_images min_frame={min_frame} erm={erm} min_image={min_image} left_end_image={left_end_image} move_left={move_left}")
             dist_images(erm, min_frame, left_end_image + move_left, min_image)
-    #else:
-        #print(f"Apparently no need to call right dist_images. step={step:.2f} dead_end={dead_end} images_right={images_right}")
+    else:
+        logprint(2, f"Apparently no need to call right dist_images. step={step:.2f} dead_end={dead_end} images_right={images_right}")
 
-    #print(f"Exiting dist_images for {min_frame}:{max_frame} this_jump={jump} this_step={step:.2f}")
+    logprint(2, f"Exiting dist_images for {min_frame}:{max_frame} this_jump={jump} this_step={step:.2f}")
     return jump, step
 
 def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows=None):
@@ -311,7 +341,7 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
 
 # Main execution
 if len(sys.argv) < 2:
-    print(f"Usage: {sys.argv[0]} <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n]")
+    print(f"Usage: {sys.argv[0]} <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n] [--debug N] [--algorithm N] [--algo-test]")
     sys.exit(1)
 
 use_cygpath = False
@@ -327,6 +357,9 @@ START_IMAGE = None
 END_IMAGE = None
 INTERACTIVE_MODE = False
 SHOW_NUMBERS = False
+DEBUG_LEVEL = 0
+ALGORITHM = 1
+ALGO_TEST = False
 
 for arg in sys.argv[1:]:
     if arg.endswith('.mp4'):
@@ -339,6 +372,12 @@ for arg in sys.argv[1:]:
         INTERACTIVE_MODE = True
     elif arg == '-n':
         SHOW_NUMBERS = True
+    elif arg.startswith('--debug'):
+        DEBUG_LEVEL = int(arg.split('=')[1])
+    elif arg.startswith('--algorithm'):
+        ALGORITHM = int(arg.split('=')[1])
+    elif arg == '--algo-test':
+        ALGO_TEST = True
     elif START_IMAGE is None:
         START_IMAGE = arg
     else:
@@ -450,45 +489,57 @@ def display_video_timeline(total_frames, deadzones, selected_frames):
     
     print(timeline_str)
 
-dist_images()
-display_video_timeline(TOTAL_FRAMES, deadzones, image)
-if INTERACTIVE_MODE:
-    while True:
-        print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
-        print("4. Show current deadzones  5. Change grid  6. Exit")
-        choice = input("Enter your choice: ")
-        if choice == '1':
-            start, end = map(int, input("Enter start and end frames: ").split())
-            add_deadzone(start, end)
-            dist_images()
-            display_video_timeline(TOTAL_FRAMES, deadzones, image)
-        elif choice == '2':
-            start, end = map(int, input("Enter start and end frames: ").split())
-            cols, rows = find_optimal_grid(end - start + 1)
-            step = (end - start) / ((cols * rows) - 1)
-            image = [int(start + (i * step) + 0.5) for i in range(cols * rows)]
-            generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end, cols, rows)
-            dist_images()
-            display_video_timeline(TOTAL_FRAMES, deadzones, image)
-            print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
-        elif choice == '3':
-            generate_montage(OUT)
-        elif choice == '4':
-            print("Current deadzones:")
-            if os.path.exists(DEADZONE_FILE):
-                with open(DEADZONE_FILE, 'r') as f:
-                    print(f.read())
-        elif choice == '5':
-            new_grid = input("Enter new grid (e.g., 4x3, x3, 4x): ")
-            if set_grid(new_grid):
+
+if ALGO_TEST:
+    for num_images in range(21, 1, -1):
+        TOTAL_IMAGES = num_images
+        COLS, ROWS = find_optimal_grid(num_images)
+        dist_images()
+        display_video_timeline(TOTAL_FRAMES, deadzones, image)
+        print(f"Number of images: {num_images}")
+        print("Frame numbers:", " ".join(map(str, image)))
+        print("Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
+        print()
+else:
+    dist_images()
+    display_video_timeline(TOTAL_FRAMES, deadzones, image)
+    if INTERACTIVE_MODE:
+        while True:
+            print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
+            print("4. Show current deadzones  5. Change grid  6. Exit")
+            choice = input("Enter your choice: ")
+            if choice == '1':
+                start, end = map(int, input("Enter start and end frames: ").split())
+                add_deadzone(start, end)
                 dist_images()
                 display_video_timeline(TOTAL_FRAMES, deadzones, image)
-        elif choice == '6':
-            break
-        else:
-            print("Invalid choice")
-else:
-    generate_montage(OUT)
+            elif choice == '2':
+                start, end = map(int, input("Enter start and end frames: ").split())
+                cols, rows = find_optimal_grid(end - start + 1)
+                step = (end - start) / ((cols * rows) - 1)
+                image = [int(start + (i * step) + 0.5) for i in range(cols * rows)]
+                generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end, cols, rows)
+                dist_images()
+                display_video_timeline(TOTAL_FRAMES, deadzones, image)
+                print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
+            elif choice == '3':
+                generate_montage(OUT)
+            elif choice == '4':
+                print("Current deadzones:")
+                if os.path.exists(DEADZONE_FILE):
+                    with open(DEADZONE_FILE, 'r') as f:
+                        print(f.read())
+            elif choice == '5':
+                new_grid = input("Enter new grid (e.g., 4x3, x3, 4x): ")
+                if set_grid(new_grid):
+                    dist_images()
+                    display_video_timeline(TOTAL_FRAMES, deadzones, image)
+            elif choice == '6':
+                break
+            else:
+                print("Invalid choice")
+    else:
+        generate_montage(OUT)
 
 shutil.rmtree(TEMP)
 print(f"Temporary files deleted. Log file: {LOG}")
