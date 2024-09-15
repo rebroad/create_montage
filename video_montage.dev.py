@@ -200,8 +200,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         if spaces_left > 0 and spaces_right > 0:
             for move_left in range(dead_images + 1):
                 move_right = dead_images - move_left
-                left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else (spaces_left * 1.5)
-                right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else (spaces_right * 1.5)
+                left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else 0
+                right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else 0
                 diff = (left_step - right_step) ** 2
                 if diff < best_diff:
                     best_diff = diff
@@ -459,7 +459,7 @@ def display_video_timeline(selected_frames):
 if ALGO_TEST:
     wins = {1: 0, 2: 0, "tie": 0}
     results = []
-    for num_images in range(21, 1, -1):
+    for num_images in range(33, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
         algo_results = {}
