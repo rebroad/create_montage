@@ -410,6 +410,8 @@ def set_grid(new_grid):
         COLS, ROWS = map(int, new_grid.split('x'))
     TOTAL_IMAGES = COLS * ROWS
 
+    return check_grid
+
 def check_grid():
     if TOTAL_IMAGES < 2:
         print("Error: The grid must allow for at least 2 images.")
@@ -427,9 +429,6 @@ elif ASPECT_RATIO:
 else:
     print("No grid or aspect ratio specified. Using default 2 row grid.")
     COLS, ROWS = find_optimal_grid(target_rows=2)
-
-if not check_grid:
-    sys.exit(1)
 
 def display_video_timeline(total_frames, deadzones, selected_frames):
     # Create the base timeline
@@ -462,6 +461,7 @@ if INTERACTIVE_MODE:
             start, end = map(int, input("Enter start and end frames: ").split())
             add_deadzone(start, end)
             dist_images()
+            display_video_timeline(TOTAL_FRAMES, deadzones, image)
         elif choice == '2':
             start, end = map(int, input("Enter start and end frames: ").split())
             cols, rows = find_optimal_grid(end - start + 1)
@@ -469,6 +469,7 @@ if INTERACTIVE_MODE:
             image = [int(start + (i * step) + 0.5) for i in range(cols * rows)]
             generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end, cols, rows)
             dist_images()
+            display_video_timeline(TOTAL_FRAMES, deadzones, image)
             print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
         elif choice == '3':
             generate_montage(OUT)
@@ -479,8 +480,9 @@ if INTERACTIVE_MODE:
                     print(f.read())
         elif choice == '5':
             new_grid = input("Enter new grid (e.g., 4x3, x3, 4x): ")
-            if change_grid(new_grid):
+            if set_grid(new_grid):
                 dist_images()
+                display_video_timeline(TOTAL_FRAMES, deadzones, image)
         elif choice == '6':
             break
         else:
