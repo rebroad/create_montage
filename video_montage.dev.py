@@ -150,39 +150,38 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
     logprint(2, f"Finding largest deadzone within frames {min_frame} to {max_frame}")
     center = (start_frame + end_frame) // 2
-    best_deadzone = max(
+    sorted_deadzones = sorted(
         ((dead_start, dead_end) for dead_start, dead_end in deadzones if min_frame <= dead_end and dead_start <= max_frame),
-        key=lambda x: (x[1] - x[0] + 1, -abs((x[0] + x[1]) // 2 - center)),
-        default=None
+        key=lambda x: (x[1] - x[0] + 1, -abs((x[0] + x[1]) // 2 - center))
     )
 
-    if not best_deadzone:
-        logprint(2, f"No deadzones within frames {min_frame} to {max_frame}")
+    for dead_start, dead_end in sorted_deadzones:
+        logprint(2, f"Checking deadzone: {dead_start}:{dead_end} for images")
+
+        dead_images = 0
+        images_left = 0
+        images_right = 0
+
+        min_image = min(start_image, end_image)
+        max_image = max(start_image, end_image)
+        for i in range(min_image, max_image + 1):
+            if image[i] < dead_start:
+                images_left += 1
+                left_end_image = i
+            elif dead_start <= image[i] <= dead_end:
+                dead_images += 1
+                right_start_image = i + 1
+            elif image[i] > dead_end:
+                images_right += 1
+        logprint(1, f"dead_images={dead_images} images_on_left={images_left} images_on_right={images_right}")
+
+        if dead_images > 0:
+            break
+    else:
+        logprint(2, f"No images to relocate in any deadzone within {min_frame}:{max_frame}")
         return jump, step
 
-    dead_start, dead_end = best_deadzone
-    logprint(1, f"Processing deadzone: {dead_start}:{dead_end}")
-
-    dead_images = 0
-    images_left = 0
-    images_right = 0
-
-    min_image = min(start_image, end_image)
-    max_image = max(start_image, end_image)
-    for i in range(min_image, max_image + 1):
-        if image[i] < dead_start:
-            images_left += 1
-            left_end_image = i
-        elif dead_start <= image[i] <= dead_end:
-            dead_images += 1
-            right_start_image = i + 1
-        elif image[i] > dead_end:
-            images_right += 1
-    logprint(1, f"dead_images={dead_images} images_on_left={images_left} images_on_right={images_right}")
-    if dead_images == 0:
-        logprint(2, f"Exiting dist_images for {min_frame}:{max_frame} jump={jump} step={step:.2f}")
-        return jump, step
-
+    logprint(1, f"Rehoming images within deadzone: {dead_start}:{dead_end}")
     spaces_left = count_available_frames(min_frame, dead_start - 1)
     spaces_right = count_available_frames(dead_end + 1, max_frame)
     logprint(1, f"spaces_left: {spaces_left}, spaces_right: {spaces_right}")
@@ -487,13 +486,13 @@ if ALGO_TEST:
     print("=" * 50)
     for num_images, winner, algo_results in results:
         if winner == "tie" and algo_results[1]["gaps"] == algo_results[2]["gaps"]:
-            display_video_timeline(algo_results[1]['image']) # 'image' or "image"?
+            display_video_timeline(algo_results[1]['image'])
             print(f"num_images={num_images} algo=1&2 variance={algo_results[1]['variance']:.4f} gaps:", " ".join(map(str, algo_results[1]["gaps"])))
         else:
             for algo in [1, 2]:
-                display_video_timeline(algo_results[algo]['image']) # 'image' or "image"?
+                display_video_timeline(algo_results[algo]['image'])
                 print(f"num_images={num_images} algo={algo} variance={algo_results[algo]['variance']:.4f} gaps:", " ".join(map(str, algo_results[algo]["gaps"])))
-    print("\nSummary: Algo1_wins={wins[1]} Algo2_wins={wins[2]} Ties={wins['tie'}")
+    print(f"\nSummary: Algo1_wins={wins[1]} Algo2_wins={wins[2]} Ties={wins['tie']}")
 else:
     if GRID:
         set_grid(GRID)
@@ -504,7 +503,7 @@ else:
         COLS, ROWS = find_optimal_grid(target_rows=2)
 
     dist_images()
-    display_video_timeline(TOTAL_FRAMES, deadzones, image)
+    display_video_timeline(image)
     if INTERACTIVE_MODE:
         while True:
             print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
@@ -514,7 +513,7 @@ else:
                 start, end = map(int, input("Enter start and end frames: ").split())
                 add_deadzone(start, end)
                 dist_images()
-                display_video_timeline(TOTAL_FRAMES, deadzones, image)
+                display_video_timeline(image)
             elif choice == '2':
                 start, end = map(int, input("Enter start and end frames: ").split())
                 cols, rows = find_optimal_grid(end - start + 1)
@@ -522,7 +521,7 @@ else:
                 image = [int(start + (i * step) + 0.5) for i in range(cols * rows)]
                 generate_montage(f"{os.path.splitext(OUT)[0]}_intermediate.png", start, end, cols, rows)
                 dist_images()
-                display_video_timeline(TOTAL_FRAMES, deadzones, image)
+                display_video_timeline(image)
                 print(f"Intermediate frames montage saved as {os.path.splitext(OUT)[0]}_intermediate.png")
             elif choice == '3':
                 generate_montage(OUT)
@@ -535,7 +534,7 @@ else:
                 new_grid = input("Enter new grid (e.g., 4x3, x3, 4x): ")
                 if set_grid(new_grid):
                     dist_images()
-                    display_video_timeline(TOTAL_FRAMES, deadzones, image)
+                    display_video_timeline(image)
             elif choice == '6':
                 break
             else:
@@ -544,4 +543,4 @@ else:
         generate_montage(OUT)
 
 shutil.rmtree(TEMP)
-print(f"Temporary files deleted. Log file: {LOG}")
+logprint(1, f"Temporary files deleted. Log file: {LOG}")
