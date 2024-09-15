@@ -150,7 +150,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     min_frame, max_frame = min(start_frame, end_frame), max(start_frame, end_frame)
     logprint(2, f"Finding largest deadzone within frames {min_frame} to {max_frame}")
     center = (start_frame + end_frame) // 2
-    
+
     # Sort deadzones by size (largest first) and then by proximity to center
     sorted_deadzones = sorted(
         ((dead_start, dead_end) for dead_start, dead_end in deadzones if min_frame <= dead_end and dead_start <= max_frame),
@@ -193,10 +193,10 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
 
     total_images = images_left + images_right + dead_images
     total_spaces = spaces_left + spaces_right
-    ideal_step = total_spaces / (total_images - 1)
-    logprint(1, f"Ideal step: {ideal_step:.2f}")
 
     if ALGORITHM == 2:
+        ideal_step = total_spaces / (total_images - 1)
+        logprint(1, f"Ideal step: {ideal_step:.2f}")
         move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
         move_right = dead_images - move_left
     elif ALGORITHM == 1:
@@ -209,6 +209,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else (spaces_right + dead_end - dead_start)
                 diff = (left_step - right_step) ** 2
                 if diff < best_diff:
+                    logprint(2, f"test move_left={move_left} left_step={left_step} right_step={right_step}")
                     best_diff = diff
                     best_move_left = move_left
             move_left = best_move_left
@@ -464,7 +465,7 @@ def display_video_timeline(selected_frames, debug=0):
 if ALGO_TEST:
     wins = {1: 0, 2: 0, "tie": 0}
     results = []
-    for num_images in range(33, 1, -1):
+    for num_images in range(42, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
         algo_results = {}
