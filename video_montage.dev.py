@@ -425,9 +425,6 @@ def set_grid(new_grid):
         COLS, ROWS = map(int, new_grid.split('x'))
     TOTAL_IMAGES = COLS * ROWS
 
-    return check_grid
-
-def check_grid():
     if TOTAL_IMAGES < 2:
         print("Error: The grid must allow for at least 2 images.")
         return False
