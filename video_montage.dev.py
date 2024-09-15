@@ -181,17 +181,31 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     spaces_left = count_available_frames(min_frame, dead_start - 1)
     spaces_right = count_available_frames(dead_end + 1, max_frame)
     print(f"spaces_left: {spaces_left}, spaces_right: {spaces_right}")
+
+    total_images = images_left + images_right + dead_images
+    total_spaces = spaces_left + spaces_right
+    ideal_step = total_spaces / (total_images - 1)
+    print(f"Ideal step: {ideal_step:.2f}")
+    move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
+    move_right = dead_images - move_left
+        
+    print(f"Claude algo: dead_images={dead_images} move_left={move_left} move_right={move_right}")
+
+    left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else 0
+    right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else 0
+
+    print(f"Left step: {left_step:.2f}, Right step: {right_step:.2f}")
+
     best_diff = float('inf')
     best_move_left = 0
-
     if spaces_left > 0 and spaces_right > 0:
         for move_left in range(dead_images + 1):
             move_right = dead_images - move_left
-            left_density = (images_left + move_left) / spaces_left
-            right_density = (images_right + move_right) / spaces_right
-            diff = (left_density - right_density) ** 2
+            left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else spaces_left
+            right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else spaces_right
+            diff = (left_step - right_step) ** 2
             if diff < best_diff:
-                print(f"move_left={move_left} diff={diff:.4f} left_density={left_density:.3f}, right_density={right_density:.3f}")
+                print(f"move_left={move_left} diff={diff:.4f} left_step={left_step:.3f}, right_step={right_step:.3f}")
                 best_diff = diff
                 best_move_left = move_left
         move_left = best_move_left
@@ -203,8 +217,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     else:
         print("No adjacent spaces to move dead images to - need more algorithm!")
         sys.exit(1)
-        
-    print(f"dead_images={dead_images} move_left={move_left} move_right={move_right}")
+
+    print(f"My algo: dead_images={dead_images} move_left={move_left} move_right={move_right}")
 
     #print("Recurse into new livezones")
     sub_jump = 0
