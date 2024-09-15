@@ -487,9 +487,10 @@ if ALGO_TEST:
     for num_images in range(21, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
-        dist_images()
-        display_video_timeline(TOTAL_FRAMES, deadzones, image)
-        print(f"Number of images: {num_images}, Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
+        for ALGORITHM in range(1, 4, 1):
+            dist_images()
+            display_video_timeline(TOTAL_FRAMES, deadzones, image)
+            print(f"Algo={ALGORITHM} Num_images={num_images}, Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
 else:
     if GRID:
         set_grid(GRID)
