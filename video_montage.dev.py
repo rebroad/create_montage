@@ -188,7 +188,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     print(f"Ideal step: {ideal_step:.2f}")
     move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
     move_right = dead_images - move_left
-        
+
     print(f"Claude algo: dead_images={dead_images} move_left={move_left} move_right={move_right}")
 
     left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else 0
@@ -196,6 +196,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
 
     print(f"Left step: {left_step:.2f}, Right step: {right_step:.2f}")
 
+    """
     best_diff = float('inf')
     best_move_left = 0
     if spaces_left > 0 and spaces_right > 0:
@@ -205,7 +206,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else spaces_right
             diff = (left_step - right_step) ** 2
             if diff < best_diff:
-                print(f"move_left={move_left} diff={diff:.4f} left_step={left_step:.3f}, right_step={right_step:.3f}")
                 best_diff = diff
                 best_move_left = move_left
         move_left = best_move_left
@@ -218,7 +218,10 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         print("No adjacent spaces to move dead images to - need more algorithm!")
         sys.exit(1)
 
-    print(f"My algo: dead_images={dead_images} move_left={move_left} move_right={move_right}")
+    left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else 0
+    right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else 0
+    print(f"My algo: dead_images={dead_images} move_left={move_left} move_right={move_right} left_step={left_step:.2f} right_step={right_step:.2f}")
+    """
 
     #print("Recurse into new livezones")
     sub_jump = 0
