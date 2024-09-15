@@ -216,31 +216,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         else:
             print("No adjacent spaces to move dead images to - need more algorithm!")
             sys.exit(1)
-    elif ALGORITHM == 3:
-        # New algorithm aiming for more consistent gaps
-        total_gap = total_spaces
-        avg_gap = total_gap / (total_images - 1)
-        left_images = images_left + dead_images
-        right_images = images_right
-
-        if spaces_left >= spaces_right:
-            move_left = dead_images
-            move_right = 0
-        else:
-            move_left = int(dead_images * (spaces_left / total_spaces))
-            move_right = dead_images - move_left
-
-        left_gap = spaces_left / (left_images - 1) if left_images > 1 else 0
-        right_gap = spaces_right / (right_images - 1) if right_images > 1 else 0
-
-        # Adjust move_left and move_right to balance gaps
-        while abs(left_gap - right_gap) > 1 and move_left > 0 and move_right < dead_images:
-            if left_gap > right_gap:
-                move_left -= 1
-                move_right += 1
-            else:
-                move_left += 1
-                move_right -= 1
     else:
         print(f"Invalid algorithm choice: {ALGORITHM}")
         sys.exit(1)
@@ -487,10 +462,13 @@ if ALGO_TEST:
     for num_images in range(21, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
-        for ALGORITHM in range(1, 4, 1):
+        for ALGORITHM in range(1, 3, 1):
             dist_images()
             display_video_timeline(TOTAL_FRAMES, deadzones, image)
-            print(f"Algo={ALGORITHM} Num_images={num_images}, Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
+            gaps = [image[i+1] - image[i] - 1 for i in range(len(image)-1)]
+            avg_gap = sum(gaps) / len(gaps)
+            gap_variance = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
+            print(f"Algo={ALGORITHM} Num_images={num_images} Avg_gap={avg_gap} Gap_variance={gap_variance} Gaps:", " ".join(map(str, [image[i+1] - image[i] - 1 for i in range(len(image)-1)])))
 else:
     if GRID:
         set_grid(GRID)
