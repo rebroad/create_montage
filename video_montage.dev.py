@@ -90,6 +90,17 @@ def add_deadzone(start, end=None):
         print(f.read())
     load_deadzones()
 
+def count_available_frames(start, end):
+    global deadzones
+    available = end - start + 1
+    for dz_start, dz_end in deadzones:
+        if dz_end < start or dz_start > end:
+            continue
+        overlap_start = max(start, dz_start)
+        overlap_end = min(end, dz_end)
+        available -= (overlap_end - overlap_start + 1)
+    return available
+
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     global image, iter
     if end_frame is None:
@@ -168,6 +179,8 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         return jump, step
 
     print(f"livezones: left: {min_frame}:{dead_start - 1} right: {dead_end + 1}:{max_frame}")
+    #spaces_left = count_available_frames(min_frame, dead_start - 1)
+    #spaces_right = count_available_frames(dead_end + 1, max_frame)
     spaces_left = dead_start - min_frame
     spaces_right = max_frame - dead_end
     best_diff = float('inf')
@@ -214,9 +227,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         else:
             erm = dead_end + 1
         print(f"Right dist_images: frames: {erm}:{max_frame} (within {min_frame}:{max_frame}) images: {right_start_image - move_right}-{max_image}")
-        if (erm == image[right_start_image - move_right]):
-            print(f"erm={erm} == first_right already so skipping processing")
-            return jump, step
         sub_jump, sub_step = dist_images(erm, max_frame, right_start_image - move_right, max_image)
         print(f"After right dist_images ({min_frame}:{max_frame}). move_left={move_left} images_left={images_left}")
         if move_left == 0 and images_left > 0:
