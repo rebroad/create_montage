@@ -91,7 +91,7 @@ def add_deadzone(start, end=None):
     load_deadzones()
 
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
-    global image, step, iter
+    global image, iter
     if end_frame is None:
         end_frame = TOTAL_FRAMES - 1
     if end_image is None:
@@ -112,7 +112,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
             print(f"Keep image {start_image} at its current position ({image[start_image]}) as it's special.")
     else:
         direction = 1 if end_image > start_image else -1
-        step = (end_frame - start_frame) / (end_image - start_image)
+        step, skip = (end_frame - start_frame) / (end_image - start_image), 0
         print(f"Distribute images {start_image}-{end_image} between frames {start_frame}-{end_frame} step={step:.2f}")
 
         for i in range(start_image, end_image, direction):
@@ -121,8 +121,12 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 jump = frame - image[i]
             print(f"image={i} frame: {image[i]} -> {frame}")
             if image[i] == frame:
-                print("Skip the rest as numbers match.")
-                break
+                skip = skip + 1
+                if skip > 1:
+                    print("Skip the rest as numbers match.")
+                    break
+            else:
+                skip = 0
             image[i] = frame
 
     print(f"Evenly dist frames: {' '.join(map(str, image))}")
