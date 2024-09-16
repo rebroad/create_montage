@@ -106,6 +106,9 @@ def logprint(level, *args, **kwargs):
     if DEBUG_LEVEL >= level:
         print(*args, **kwargs)
 
+def calculate_gap(spaces, images):
+    return spaces / (images - 1) if images > 1 else float('inf')
+
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     global image, iter
     if end_frame is None:
@@ -194,12 +197,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     total_images = images_left + images_right + dead_images
     total_spaces = spaces_left + spaces_right
 
-    if ALGORITHM == 2:
-        ideal_step = total_spaces / (total_images - 1)
-        logprint(1, f"Ideal step: {ideal_step:.2f}")
-        move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
-        move_right = dead_images - move_left
-    elif ALGORITHM == 1:
+    if ALGORITHM == 1: # My iterative approach
         best_diff = float('inf')
         best_move_left = 0
         if spaces_left > 0 and spaces_right > 0:
@@ -221,6 +219,41 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
         else:
             print("No adjacent spaces to move dead images to - need more algorithm!")
             sys.exit(1)
+    elif ALGORITHM == 2: # My modification of Claude's iterative ideal gap
+        best_diff = float('inf')
+        best_move_left = 0
+        for move_left in range(dead_images + 1):
+            move_right = dead_images - move_left
+            left_gap = calculate_gap(spaces_left, images_left + move_left)
+            right_gap = calculate_gap(spaces_right, images_right + move_right)
+            diff = (left_gap - right_gap) ** 2
+            if diff < best_diff:
+                logprint(2, f"test move_left={move_left} left_gap={left_gap:.2f} right_gap={right_gap:.2f}")
+                best_diff = diff
+                best_move_left = move_left
+        move_left = best_move_left
+        move_right = dead_images - move_left
+    elif ALGORITHM == 3: # Claude's iterative ideal gap
+        ideal_gap = total_spaces / (total_images - 1) if total_images > 1 else float('inf')
+        logprint(1, f"Ideal gap: {ideal_gap:.2f}")
+        best_move_left = 0
+        best_score = float('inf')
+        for move_left in range(dead_images + 1):
+            move_right = dead_images - move_left
+            left_gap = calculate_gap(spaces_left, images_left + move_left)
+            right_gap = calculate_gap(spaces_right, images_right + move_right)
+            score = abs(left_gap - ideal_gap) + abs(right_gap - ideal_gap)
+            if score < best_score:
+                logprint(2, f"test move_left={move_left} left_gap={left_gap:.2f} right_gap={right_gap:.2f} score={score:.2f}")
+                best_score = score
+                best_move_left = move_left
+        move_left = best_move_left
+        move_right = dead_images - move_left
+    elif ALGORITHM == 4: # Claude's simple ideal step
+        ideal_step = total_spaces / (total_images - 1)
+        logprint(1, f"Ideal step: {ideal_step:.2f}")
+        move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
+        move_right = dead_images - move_left
     else:
         print(f"Invalid algorithm choice: {ALGORITHM}")
         sys.exit(1)
@@ -463,42 +496,48 @@ def display_video_timeline(selected_frames, debug=0):
     logprint(debug, timeline_str)
 
 if ALGO_TEST:
-    wins = {1: 0, 2: 0, "tie": 0}
+    wins = {1: 0, 2: 0, 3: 0, 4: 0}
     results = []
     for num_images in range(42, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
+        best_variance = float('inf')
         algo_results = {}
-        for ALGORITHM in [1, 2]:
+        for ALGORITHM in [1, 2, 3, 4]:
             dist_images()
             gaps = [image[i+1] - image[i] - 1 for i in range(len(image)-1)]
             avg_gap = sum(gaps) / len(gaps)
             variance = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
+            if variance < best_variance:
+                best_variance = variance
+                best_algos = [ALGORITHM]
+            elif variance == best_variance:
+                best_algos.append(ALGORITHM)
             algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": variance}
 
-        if algo_results[1]["variance"] < algo_results[2]["variance"]:
-            winner = 1
-            wins[1] += 1
-        elif algo_results[2]["variance"] < algo_results[1]["variance"]:
-            winner = 2
-            wins[2] += 1
-        else:
-            winner = "tie"
-            wins["tie"] += 1
-
-        results.append((num_images, winner, algo_results))
+        for algo in best_algos:
+            wins[algo] += 1
+        results.append((num_images, best_algos, algo_results))
 
     print("\nAlgorithm Test Results:")
     print("=" * 50)
-    for num_images, winner, algo_results in results:
-        if winner == "tie" and algo_results[1]["gaps"] == algo_results[2]["gaps"]:
-            display_video_timeline(algo_results[1]['image'])
-            print(f"num_images={num_images} algo=1&2 variance={algo_results[1]['variance']:.4f} gaps:", " ".join(map(str, algo_results[1]["gaps"])))
-        else:
-            for algo in [1, 2]:
-                display_video_timeline(algo_results[algo]['image'])
-                print(f"num_images={num_images} algo={algo} variance={algo_results[algo]['variance']:.4f} gaps:", " ".join(map(str, algo_results[algo]["gaps"])))
-    print(f"\nSummary: Algo1_wins={wins[1]} Algo2_wins={wins[2]} Ties={wins['tie']}")
+    for num_images, best_algos, algo_results in results:
+        # Group algorithms by their gap configuration
+        gap_configs = {}
+        for algo in [1, 2, 3, 4]:
+            gap_tuple = tuple(algo_results[algo]["gaps"])
+            if gap_tuple not in gap_configs:
+                gap_configs[gap_tuple] = []
+            gap_configs[gap_tuple].append(algo)
+
+        for gaps, algos in gap_configs.items():
+            display_video_timeline(algo_results[algos[0]]['image'])
+            algo_str = "&".join(map(str, algos))
+            variance = algo_results[algos[0]]['variance']
+            print(f"num_images={num_images} algo={algo_str} variance={variance:.4f} gaps:", " ".join(map(str, gaps)))
+
+    print("Final Wins:", " ".join(f"Algo{algo}_wins={win_count}" for algo, win_count in wins.items()))
+    print()
 else:
     if GRID:
         set_grid(GRID)
