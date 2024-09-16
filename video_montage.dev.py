@@ -225,23 +225,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 best_move_left = move_left
         move_left = best_move_left
         move_right = dead_images - move_left
-    elif ALGORITHM == 3: # Claude's iterative ideal gap
-        ideal_gap = total_spaces / (total_images - 1) if total_images > 1 else float('inf')
-        logprint(1, f"Ideal gap: {ideal_gap:.2f}")
-        best_move_left = 0
-        best_score = float('inf')
-        for move_left in range(dead_images + 1):
-            move_right = dead_images - move_left
-            left_gap = calculate_gap(spaces_left, images_left + move_left)
-            right_gap = calculate_gap(spaces_right, images_right + move_right)
-            score = abs(left_gap - ideal_gap) + abs(right_gap - ideal_gap)
-            if score < best_score:
-                logprint(2, f"test move_left={move_left} left_gap={left_gap:.2f} right_gap={right_gap:.2f} score={score:.2f}")
-                best_score = score
-                best_move_left = move_left
-        move_left = best_move_left
-        move_right = dead_images - move_left
-    elif ALGORITHM == 4: # Claude's simple ideal step
+    elif ALGORITHM == 3: # Claude's simple ideal step
         ideal_step = total_spaces / (total_images - 1)
         logprint(1, f"Ideal step: {ideal_step:.2f}")
         move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
@@ -487,7 +471,7 @@ def display_video_timeline(selected_frames, debug=0):
     
     logprint(debug, timeline_str)
 
-NUM_ALGORITHMS = 4
+NUM_ALGORITHMS = 3
 
 if ALGO_TEST:
     stats = {algo: {'best': 0, 'winner': 0, 'worst': 0, 'loser': 0} for algo in range(1, NUM_ALGORITHMS + 1)}
@@ -536,7 +520,7 @@ if ALGO_TEST:
             display_video_timeline(algo_results[algos[0]]['image'])
             algo_str = "&".join(map(str, algos))
             variance = algo_results[algos[0]]['variance']
-            print(f"num_images={num_images} algo={algo_str} variance={variance:.4f} gaps:", " ".join(map(str, gaps)))
+            print(f"num_images={num_images} algo={algo_str} variance={variance:.4f}")
 
     print("Final Results: ", end="")
     for algo, data in stats.items():
