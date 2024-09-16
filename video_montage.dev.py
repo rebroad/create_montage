@@ -502,39 +502,37 @@ def display_video_timeline(selected_frames, debug=0):
     
     logprint(debug, timeline_str)
 
+NUM_ALGORITHMS = 4
+
 if ALGO_TEST:
-    best = {1: 0, 2: 0, 3: 0, 4: 0}
-    winner = {1: 0, 2: 0, 3: 0, 4: 0}
-    worst = {1: 0, 2: 0, 3: 0, 4: 0}
-    loser = {1: 0, 2: 0, 3: 0, 4: 0}
+    stats = {algo: {'best': 0, 'winner': 0, 'worst': 0, 'loser': 0} for algo in range(1, NUM_ALGORITHMS + 1)}
     results = []
     for num_images in range(42, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
         algo_results = {}
-        scores = {}
-        for ALGORITHM in [1, 2, 3, 4]:
+        for ALGORITHM in range(1, NUM_ALGORITHMS + 1):
             dist_images()
             gaps = [image[i+1] - image[i] - 1 for i in range(len(image)-1)]
-            avg_gap = sum(gaps) / len(gaps)
-            score = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
-            scores[ALGORITHM] = score
-            algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": score}
+            variance = sum((gap - (sum(gaps) / len(gaps))) ** 2 for gap in gaps) / len(gaps)
+            algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": variance}
 
-        min_score = min(scores.values())
-        max_score = max(scores.values())
-        best_algos = [algo for algo, score in scores.items() if score == min_score]
-        worst_algos = [algo for algo, score in scores.items() if score == max_score]
+        sorted_algos = sorted(algo_results.items(), key=lambda x: x[1]['variance'])
+        best_variance = sorted_algos[0][1]['variance']
+        worst_variance = sorted_algos[-1][1]['variance']
+
+        best_algos = [algo for algo, result in sorted_algos if result['variance'] == best_variance]
+        worst_algos = [algo for algo, result in sorted_algos if result['variance'] == worst_variance]
 
         for algo in best_algos:
-            best[algo] += 1
-        for algo in worst_algos:
-            worst[algo] += 1
-
+            stats[algo]['best'] += 1
         if len(best_algos) == 1:
-            winner[best_algos[0]] += 1
+            stats[best_algos[0]]['winner'] += 1
+
+        for algo in worst_algos:
+            stats[algo]['worst'] += 1
         if len(worst_algos) == 1:
-            loser[worst_algos[0]] += 1
+            stats[worst_algos[0]]['loser'] += 1
 
         results.append((num_images, algo_results))
 
@@ -543,7 +541,7 @@ if ALGO_TEST:
     for num_images, algo_results in results:
         # Group algorithms by their gap configuration
         gap_configs = {}
-        for algo in [1, 2, 3, 4]:
+        for algo in range(1, NUM_ALGORITHMS + 1):
             gap_tuple = tuple(algo_results[algo]["gaps"])
             if gap_tuple not in gap_configs:
                 gap_configs[gap_tuple] = []
@@ -556,8 +554,8 @@ if ALGO_TEST:
             print(f"num_images={num_images} algo={algo_str} variance={variance:.4f} gaps:", " ".join(map(str, gaps)))
 
     print("Final Results: ", end="")
-    for algo in [1, 2, 3, 4]:
-        print(f"algo{algo}_winner,best,worst,loser = {winner[algo]},{best[algo]},{worst[algo]},{loser[algo]}", end=" ")
+    for algo, data in stats.items():
+        print(f"algo{algo}_winner,best,worst,loser = {data['winner']},{data['best']},{data['worst']},{data['loser']}", end=" ")
     print()
 else:
     if GRID:
