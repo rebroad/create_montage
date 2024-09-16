@@ -109,6 +109,12 @@ def logprint(level, *args, **kwargs):
 def calculate_gap(spaces, images):
     return spaces / (images - 1) if images > 1 else float('inf')
 
+def calculate_variance(spaces, images):
+    if images <= 1:
+        return 0
+    avg_gap = spaces / (images - 1)
+    return sum((x - avg_gap) ** 2 for x in range(images)) / images
+
 def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     global image, iter
     if end_frame is None:
@@ -211,7 +217,21 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 best_move_left = move_left
         move_left = best_move_left
         move_right = dead_images - move_left
-    elif ALGORITHM == 2: # My modification of Claude's iterative ideal gap
+    elif ALGORITHM == 2: # All about variance
+        best_variance = float('inf')
+        best_move_left = 0
+        for move_left in range(dead_images + 1):
+            move_right = dead_images - move_left
+            left_variance = calculate_variance(spaces_left, images_left + move_left)
+            right_variance = calculate_variance(spaces_right, images_right + move_right)
+            total_variance = (left_variance * (images_left + move_left) + right_variance * (images_right + move_right)) / total_images
+            logprint(2, f"test move_left={move_left} left_variance={left_variance:.4f} right_variance={right_variance:.4f}")
+            if total_variance < best_variance:
+                best_variance = total_variance
+                best_move_left = move_left
+        move_left = best_move_left
+        move_right = dead_images - move_left
+    elif ALGORITHM == 3: # My modification of Claude's iterative ideal gap
         best_diff = float('inf')
         best_move_left = 0
         for move_left in range(dead_images + 1):
@@ -225,7 +245,7 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 best_move_left = move_left
         move_left = best_move_left
         move_right = dead_images - move_left
-    elif ALGORITHM == 3: # Claude's iterative ideal gap
+    elif ALGORITHM == 4: # Claude's iterative ideal gap
         ideal_gap = total_spaces / (total_images - 1) if total_images > 1 else float('inf')
         logprint(1, f"Ideal gap: {ideal_gap:.2f}")
         best_move_left = 0
@@ -240,11 +260,6 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 best_score = score
                 best_move_left = move_left
         move_left = best_move_left
-        move_right = dead_images - move_left
-    elif ALGORITHM == 4: # Claude's simple ideal step
-        ideal_step = total_spaces / (total_images - 1)
-        logprint(1, f"Ideal step: {ideal_step:.2f}")
-        move_left = min(dead_images, max(0, int((spaces_left / ideal_step) - images_left + 0.5)))
         move_right = dead_images - move_left
     else:
         print(f"Invalid algorithm choice: {ALGORITHM}")
