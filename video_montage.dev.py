@@ -497,30 +497,34 @@ def display_video_timeline(selected_frames, debug=0):
 
 if ALGO_TEST:
     wins = {1: 0, 2: 0, 3: 0, 4: 0}
+    lose = {1: 0, 2: 0, 3: 0, 4: 0}
     results = []
     for num_images in range(42, 1, -1):
         TOTAL_IMAGES = num_images
         COLS, ROWS = num_images, 1
-        best_variance = float('inf')
         algo_results = {}
+        scores = {}
         for ALGORITHM in [1, 2, 3, 4]:
             dist_images()
             gaps = [image[i+1] - image[i] - 1 for i in range(len(image)-1)]
             avg_gap = sum(gaps) / len(gaps)
-            variance = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
-            if variance < best_variance:
-                best_variance = variance
-                best_algos = [ALGORITHM]
-            elif variance == best_variance:
-                best_algos.append(ALGORITHM)
-            algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": variance}
-        for algo in best_algos:
-            wins[algo] += 1
-        results.append((num_images, best_algos, algo_results))
+            score = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
+            scores[ALGORITHM] = score
+            algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": score}
+        best_score = min(scores.values())
+        worst_score = max(scores.values())
+
+        for algo, score in scores.items():
+            if score == best_score:
+                wins[algo] += 1
+            if score == worst_score:
+                lose[algo] += 1
+
+        results.append((num_images, algo_results))
 
     print("\nAlgorithm Test Results:")
     print("=" * 50)
-    for num_images, best_algos, algo_results in results:
+    for num_images, algo_results in results:
         # Group algorithms by their gap configuration
         gap_configs = {}
         for algo in [1, 2, 3, 4]:
@@ -536,7 +540,10 @@ if ALGO_TEST:
             variance = algo_results[algos[0]]['variance']
             print(f"num_images={num_images} algo={algo_str} variance={variance:.4f} gaps:", " ".join(map(str, gaps)))
 
-    print("Final Wins:", " ".join(f"Algo{algo}_wins={win_count}" for algo, win_count in wins.items()))
+    print("Final Results: ", end="")
+    for algo in [1, 2, 3, 4]:
+        print(f"algo{algo}_best,worst = {wins[algo]},{lose[algo]}", end=" ")
+    print()
 else:
     if GRID:
         set_grid(GRID)
