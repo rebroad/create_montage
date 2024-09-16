@@ -217,17 +217,17 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
                 best_move_left = move_left
         move_left = best_move_left
         move_right = dead_images - move_left
-    elif ALGORITHM == 2: # All about variance
-        best_variance = float('inf')
+    elif ALGORITHM == 2: # Copy of 1
+        best_diff = float('inf')
         best_move_left = 0
         for move_left in range(dead_images + 1):
             move_right = dead_images - move_left
-            left_variance = calculate_variance(spaces_left, images_left + move_left)
-            right_variance = calculate_variance(spaces_right, images_right + move_right)
-            total_variance = (left_variance * (images_left + move_left) + right_variance * (images_right + move_right)) / total_images
-            logprint(2, f"test move_left={move_left} left_variance={left_variance:.4f} right_variance={right_variance:.4f}")
-            if total_variance < best_variance:
-                best_variance = total_variance
+            left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else (spaces_left + dead_end - dead_start)
+            right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else (spaces_right + dead_end - dead_start)
+            diff = (left_step - right_step) ** 2
+            if diff < best_diff:
+                logprint(2, f"test move_left={move_left} left_step={left_step} right_step={right_step}")
+                best_diff = diff
                 best_move_left = move_left
         move_left = best_move_left
         move_right = dead_images - move_left
@@ -503,8 +503,10 @@ def display_video_timeline(selected_frames, debug=0):
     logprint(debug, timeline_str)
 
 if ALGO_TEST:
-    wins = {1: 0, 2: 0, 3: 0, 4: 0}
-    lose = {1: 0, 2: 0, 3: 0, 4: 0}
+    best = {1: 0, 2: 0, 3: 0, 4: 0}
+    winner = {1: 0, 2: 0, 3: 0, 4: 0}
+    worst = {1: 0, 2: 0, 3: 0, 4: 0}
+    loser = {1: 0, 2: 0, 3: 0, 4: 0}
     results = []
     for num_images in range(42, 1, -1):
         TOTAL_IMAGES = num_images
@@ -518,14 +520,21 @@ if ALGO_TEST:
             score = sum((gap - avg_gap) ** 2 for gap in gaps) / len(gaps)
             scores[ALGORITHM] = score
             algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": score}
-        best_score = min(scores.values())
-        worst_score = max(scores.values())
 
-        for algo, score in scores.items():
-            if score == best_score:
-                wins[algo] += 1
-            if score == worst_score:
-                lose[algo] += 1
+        min_score = min(scores.values())
+        max_score = max(scores.values())
+        best_algos = [algo for algo, score in scores.items() if score == min_score]
+        worst_algos = [algo for algo, score in scores.items() if score == max_score]
+
+        for algo in best_algos:
+            best[algo] += 1
+        for algo in worst_algos:
+            worst[algo] += 1
+
+        if len(best_algos) == 1:
+            winner[best_algos[0]] += 1
+        if len(worst_algos) == 1:
+            loser[worst_algos[0]] += 1
 
         results.append((num_images, algo_results))
 
@@ -540,7 +549,6 @@ if ALGO_TEST:
                 gap_configs[gap_tuple] = []
             gap_configs[gap_tuple].append(algo)
         sorted_gap_configs = sorted(gap_configs.items(), key=lambda x: algo_results[x[1][0]]['variance'])
-
         for gaps, algos in sorted_gap_configs:
             display_video_timeline(algo_results[algos[0]]['image'])
             algo_str = "&".join(map(str, algos))
@@ -549,7 +557,7 @@ if ALGO_TEST:
 
     print("Final Results: ", end="")
     for algo in [1, 2, 3, 4]:
-        print(f"algo{algo}_best,worst = {wins[algo]},{lose[algo]}", end=" ")
+        print(f"algo{algo}_winner,best,worst,loser = {winner[algo]},{best[algo]},{worst[algo]},{loser[algo]}", end=" ")
     print()
 else:
     if GRID:
