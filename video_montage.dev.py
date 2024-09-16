@@ -200,25 +200,17 @@ def dist_images(start_frame=0, end_frame=None, start_image=0, end_image=None):
     if ALGORITHM == 1: # My iterative approach
         best_diff = float('inf')
         best_move_left = 0
-        if spaces_left > 0 and spaces_right > 0:
-            for move_left in range(dead_images + 1):
-                move_right = dead_images - move_left
-                left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else (spaces_left + dead_end - dead_start)
-                right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else (spaces_right + dead_end - dead_start)
-                diff = (left_step - right_step) ** 2
-                if diff < best_diff:
-                    logprint(2, f"test move_left={move_left} left_step={left_step} right_step={right_step}")
-                    best_diff = diff
-                    best_move_left = move_left
-            move_left = best_move_left
+        for move_left in range(dead_images + 1):
             move_right = dead_images - move_left
-        elif spaces_left > 0:
-            move_left, move_right = dead_images, 0
-        elif spaces_right > 0:
-            move_left, move_right = 0, dead_images
-        else:
-            print("No adjacent spaces to move dead images to - need more algorithm!")
-            sys.exit(1)
+            left_step = spaces_left / (images_left + move_left - 1) if images_left + move_left > 1 else (spaces_left + dead_end - dead_start)
+            right_step = spaces_right / (images_right + move_right - 1) if images_right + move_right > 1 else (spaces_right + dead_end - dead_start)
+            diff = (left_step - right_step) ** 2
+            if diff < best_diff:
+                logprint(2, f"test move_left={move_left} left_step={left_step} right_step={right_step}")
+                best_diff = diff
+                best_move_left = move_left
+        move_left = best_move_left
+        move_right = dead_images - move_left
     elif ALGORITHM == 2: # My modification of Claude's iterative ideal gap
         best_diff = float('inf')
         best_move_left = 0
