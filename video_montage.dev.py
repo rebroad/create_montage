@@ -514,7 +514,6 @@ if ALGO_TEST:
             elif variance == best_variance:
                 best_algos.append(ALGORITHM)
             algo_results[ALGORITHM] = {"image": image.copy(), "gaps": gaps, "variance": variance}
-
         for algo in best_algos:
             wins[algo] += 1
         results.append((num_images, best_algos, algo_results))
@@ -529,15 +528,15 @@ if ALGO_TEST:
             if gap_tuple not in gap_configs:
                 gap_configs[gap_tuple] = []
             gap_configs[gap_tuple].append(algo)
+        sorted_gap_configs = sorted(gap_configs.items(), key=lambda x: algo_results[x[1][0]]['variance'])
 
-        for gaps, algos in gap_configs.items():
+        for gaps, algos in sorted_gap_configs:
             display_video_timeline(algo_results[algos[0]]['image'])
             algo_str = "&".join(map(str, algos))
             variance = algo_results[algos[0]]['variance']
             print(f"num_images={num_images} algo={algo_str} variance={variance:.4f} gaps:", " ".join(map(str, gaps)))
 
     print("Final Wins:", " ".join(f"Algo{algo}_wins={win_count}" for algo, win_count in wins.items()))
-    print()
 else:
     if GRID:
         set_grid(GRID)
