@@ -269,7 +269,6 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
     inputs = []
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
-    is_gif = VID.lower().endswith('.gif')
 
     for i, frame_num in enumerate(image):
         out_frame = os.path.join(TEMP, f"frame_{frame_num}.png")
@@ -286,8 +285,8 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
         final_width = FRAME_WIDTH
         final_height = FRAME_HEIGHT
 
-        # For low-resolution GIFs with SHOW_NUMBERS, upscale to prevent text from dominating
-        if is_gif and SHOW_NUMBERS:
+        # For low-resolution inputs with SHOW_NUMBERS, upscale to prevent text from dominating
+        if SHOW_NUMBERS:
             # Find minimum dimension
             min_dimension = min(FRAME_WIDTH, FRAME_HEIGHT)
             if min_dimension < 100:
