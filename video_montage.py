@@ -512,10 +512,7 @@ if ALL_FRAMES:
     # Set image array to all frame numbers (no padding - empty slots will be blank)
     image = list(range(TOTAL_FRAMES))
     empty_slots = TOTAL_IMAGES - len(image)
-    if empty_slots > 0:
-        print(f"Using grid: {COLS}x{ROWS} (will use all {TOTAL_FRAMES} frames, {empty_slots} empty slots)")
-    else:
-        print(f"Using grid: {COLS}x{ROWS} (will use all {TOTAL_FRAMES} frames)")
+    print(f"Using grid: {COLS}x{ROWS} (will use all {TOTAL_FRAMES} frames, {empty_slots} empty slots)")
 else:
     # Normal mode: validate grid size
     print(f"Using grid: {COLS}x{ROWS}")
