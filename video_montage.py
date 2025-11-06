@@ -1,10 +1,12 @@
-#!/bin/python
+#!/bin/python3
 
 import os
 import sys
 import subprocess
 import tempfile
 import shutil
+import glob
+import math
 
 def convert_path(path):
     global use_cygpath
@@ -16,18 +18,30 @@ def convert_path(path):
     return path
 
 def get_dimensions(file_path):
-    cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", convert_path(file_path)
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    dimensions = result.stdout.strip()
-    if not dimensions:
-        print(f"Error: Unable to get dimensions for {file_path}")
-        print(f"ffprobe output: {result.stderr}")
-        sys.exit(1)
-    width, height = map(int, dimensions.split('x'))
-    return width, height
+    if file_path.lower().endswith('.gif'):
+        # Use ImageMagick identify for GIFs
+        cmd = ["identify", "-format", "%wx%h", convert_path(file_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        dimensions = result.stdout.strip().split('\n')[0]  # Get first frame dimensions
+        if not dimensions:
+            print(f"Error: Unable to get dimensions for {file_path}")
+            print(f"identify output: {result.stderr}")
+            sys.exit(1)
+        width, height = map(int, dimensions.split('x'))
+        return width, height
+    else:
+        cmd = [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", convert_path(file_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        dimensions = result.stdout.strip()
+        if not dimensions:
+            print(f"Error: Unable to get dimensions for {file_path}")
+            print(f"ffprobe output: {result.stderr}")
+            sys.exit(1)
+        width, height = map(int, dimensions.split('x'))
+        return width, height
 
 def load_deadzones():
     global AVAILABLE_FRAMES, deadzones
@@ -268,23 +282,86 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
     inputs = []
     what = "selected range" if start_frame != 0 or end_frame != TOTAL_FRAMES - 1 else "video"
     resizing = " and resizing" if RESIZE else ""
+    is_gif = VID.lower().endswith('.gif')
 
     for i, frame_num in enumerate(image):
         out_frame = os.path.join(TEMP, f"frame_{frame_num}.png")
-        percent = (i / (len(image) - 1)) * 100
+        percent = (i / (len(image) - 1)) * 100 if len(image) > 1 else 0
         print(f"Extracting frame {i} (frame {frame_num}, {percent:.2f}% of {what}){resizing}")
-        filter = f"select=eq(n\\,{frame_num}){RESIZE}"
-        if SHOW_NUMBERS:
-            text = []
-            text.append(str(frame_num)) # TODO - make the text size proportional to the size of the montage
-            filter += f",drawtext=fontfile=/path/to/font.ttf:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{' '.join(text)}'"
         inputs.extend(["-i", convert_path(out_frame)])
         if os.path.exists(out_frame):
             continue
+
+        # Build filter chain
+        filter_parts = [f"select=eq(n\\,{frame_num})"]
+
+        # Calculate final dimensions for font size calculation
+        final_width = FRAME_WIDTH
+        final_height = FRAME_HEIGHT
+
+        # For low-resolution GIFs with SHOW_NUMBERS, upscale to prevent text from dominating
+        if is_gif and SHOW_NUMBERS:
+            # Find minimum dimension
+            min_dimension = min(FRAME_WIDTH, FRAME_HEIGHT)
+            if min_dimension < 100:
+                # Calculate scale factor needed to get minimum dimension to at least 100 pixels
+                # Use integer scale factors only (2x, 3x, 4x, etc.)
+                scale_factor = math.ceil(100 / min_dimension)
+                scaled_width = FRAME_WIDTH * scale_factor
+                scaled_height = FRAME_HEIGHT * scale_factor
+                # Upscale low-resolution frames
+                filter_parts.append(f"scale={scaled_width}:{scaled_height}:flags=lanczos")
+                final_width = scaled_width
+                final_height = scaled_height
+                print(f"  Upscaling low-res frame from {FRAME_WIDTH}x{FRAME_HEIGHT} to {scaled_width}x{scaled_height} ({scale_factor}x)")
+
+        # Apply user-specified resize if any
+        if RESIZE:
+            # Extract dimensions from RESIZE string (format: ",scale=W:H")
+            resize_part = RESIZE.replace(",scale=", "").replace(",", "")
+            if 'x' in resize_part:
+                final_width, final_height = map(int, resize_part.split('x'))
+            filter_parts.append(RESIZE.lstrip(','))
+
+        # Add text overlay if SHOW_NUMBERS is enabled
+        if SHOW_NUMBERS:
+            # Font size proportional to frame height (about 4% of height, minimum 16)
+            fontsize = max(16, int(final_height * 0.04))
+            text = str(frame_num)
+            filter_parts.append(f"drawtext=fontfile=/path/to/font.ttf:fontsize={fontsize}:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{text}'")
+
+        filter = ":".join(filter_parts)
+
+        # Use ffmpeg for both videos and GIFs
         subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
         if not os.path.exists(out_frame):
             print(f"Error: Failed to extract frame {i}. See {LOG}")
             sys.exit(1)
+
+    # Create blank frames for empty slots (ALL_FRAMES mode)
+    total_grid_cells = cols * rows
+    if len(image) < total_grid_cells:
+        empty_count = total_grid_cells - len(image)
+        print(f"Creating {empty_count} blank frame(s) for empty slots")
+        # Get dimensions from first frame or use FRAME_WIDTH/FRAME_HEIGHT
+        blank_width = FRAME_WIDTH
+        blank_height = FRAME_HEIGHT
+        if RESIZE:
+            # Extract dimensions from RESIZE string
+            resize_part = RESIZE.replace(",scale=", "").replace(",", "")
+            if 'x' in resize_part:
+                blank_width, blank_height = map(int, resize_part.split('x'))
+
+        for i in range(empty_count):
+            blank_frame = os.path.join(TEMP, f"blank_{i}.png")
+            # Create transparent blank frame using ImageMagick
+            cmd = ["convert", "-size", f"{blank_width}x{blank_height}", "xc:transparent", convert_path(blank_frame)]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"Error: Failed to create blank frame. Error: {result.stderr}")
+                sys.exit(1)
+            inputs.extend(["-i", convert_path(blank_frame)])
 
     if rows == 1:
         filter = f"{''.join(f'[{i}:v]' for i in range(cols))}hstack=inputs={cols}[v]"
@@ -316,7 +393,8 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
 
 # Main execution
 if len(sys.argv) < 2:
-    print(f"Usage: {sys.argv[0]} <video.mp4> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n]")
+    print(f"Usage: {sys.argv[0]} <video.mp4|animation.gif> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n] [-a]")
+    print("  -a, --all-frames: Include ALL frames in the montage (not just selected grid frames)")
     sys.exit(1)
 
 use_cygpath = False
@@ -332,10 +410,13 @@ START_IMAGE = None
 END_IMAGE = None
 INTERACTIVE_MODE = False
 SHOW_NUMBERS = False
+ALL_FRAMES = False
 
 for arg in sys.argv[1:]:
-    if arg.endswith('.mp4'):
+    if arg.endswith('.mp4') or arg.endswith('.gif'):
         VID = arg
+    elif arg in ('-a', '--all-frames'):
+        ALL_FRAMES = True
     elif ':' in arg:
         ASPECT_RATIO = arg
     elif 'x' in arg:
@@ -364,19 +445,37 @@ TEMP = tempfile.mkdtemp()
 LOG = os.path.join(TEMP, "ffmpeg_log.log")
 
 print(f"Determining video information for: {VID}")
-cmd = [
-    "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-    "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", convert_path(VID)
-]
-result = subprocess.run(cmd, capture_output=True, text=True)
-if result.returncode != 0:
-    print(f"Error running ffprobe. Return code: {result.returncode}")
-    print(f"Error output: {result.stderr}")
-    sys.exit(1)
+is_gif = VID.lower().endswith('.gif')
+
+if is_gif:
+    # Use ImageMagick identify to count GIF frames
+    # First try: use identify to get frame count
+    cmd = ["identify", convert_path(VID)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Error running identify. Return code: {result.returncode}")
+        print(f"Error output: {result.stderr}")
+        sys.exit(1)
+    # Count lines in output (each line is a frame)
+    frame_lines = [line for line in result.stdout.strip().split('\n') if line.strip()]
+    TOTAL_FRAMES = len(frame_lines)
+    if TOTAL_FRAMES == 0:
+        TOTAL_FRAMES = 1
+else:
+    cmd = [
+        "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", convert_path(VID)
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Error running ffprobe. Return code: {result.returncode}")
+        print(f"Error output: {result.stderr}")
+        sys.exit(1)
 
 stdout = result.stdout.strip()
 if not stdout:
     print("Error: ffprobe didn't return any output.")
+    sys.exit(1)
 else:
     try:
         TOTAL_FRAMES = int(stdout)
@@ -405,50 +504,85 @@ print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
 
 load_deadzones()
 
+# Determine available frames for grid calculation
+available_frames_for_grid = TOTAL_FRAMES if ALL_FRAMES else AVAILABLE_FRAMES
+
+# Calculate grid based on user input
 if GRID:
     if GRID.endswith('x'):
-        COLS, ROWS = find_optimal_grid(target_cols=int(GRID[:-1]))
+        COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid, target_cols=int(GRID[:-1]))
     elif GRID.startswith('x'):
-        COLS, ROWS = find_optimal_grid(target_rows=int(GRID[1:]))
+        COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid, target_rows=int(GRID[1:]))
     else:
         COLS, ROWS = map(int, GRID.split('x'))
 elif ASPECT_RATIO:
-    COLS, ROWS = find_optimal_grid()
+    COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid)
 else:
-    print("No grid or aspect ratio specified. Using default 2 row grid.")
-    COLS, ROWS = find_optimal_grid(target_rows=2)
+    # Default: find grid with 2 rows
+    if not ALL_FRAMES:
+        print("No grid or aspect ratio specified. Using default 2 row grid.")
+    COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid, target_rows=2)
 
-print(f"Using grid: {COLS}x{ROWS}")
-TOTAL_IMAGES = COLS * ROWS
-if TOTAL_IMAGES < 2:
-    print("Error: The grid must allow for at least 2 images.")
-    sys.exit(1)
-if TOTAL_IMAGES > TOTAL_FRAMES:
-    print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
-    sys.exit(1)
+# Handle ALL_FRAMES mode specifics
+if ALL_FRAMES:
+    print("All frames mode: including all frames in montage")
+    # If grid is still too small and we have an aspect ratio, recalculate
+    if COLS * ROWS < TOTAL_FRAMES:
+        if ASPECT_RATIO:
+            # Recalculate grid respecting aspect ratio to fit all frames
+            COLS, ROWS = find_optimal_grid(available_frames=TOTAL_FRAMES)
+        else:
+            # No aspect ratio constraint, so we can expand the grid
+            while COLS * ROWS < TOTAL_FRAMES:
+                if COLS <= ROWS:
+                    COLS += 1
+                else:
+                    ROWS += 1
+
+    TOTAL_IMAGES = COLS * ROWS
+    # Set image array to all frame numbers (no padding - empty slots will be blank)
+    image = list(range(TOTAL_FRAMES))
+    empty_slots = TOTAL_IMAGES - len(image)
+    if empty_slots > 0:
+        print(f"Using grid: {COLS}x{ROWS} (will use all {TOTAL_FRAMES} frames, {empty_slots} empty slots)")
+    else:
+        print(f"Using grid: {COLS}x{ROWS} (will use all {TOTAL_FRAMES} frames)")
+else:
+    # Normal mode: validate grid size
+    print(f"Using grid: {COLS}x{ROWS}")
+    TOTAL_IMAGES = COLS * ROWS
+    if TOTAL_IMAGES < 2:
+        print("Error: The grid must allow for at least 2 images.")
+        sys.exit(1)
+    if TOTAL_IMAGES > TOTAL_FRAMES:
+        print(f"Error: Grid ({COLS}x{ROWS}) requires more images ({TOTAL_IMAGES}) than video frames ({TOTAL_FRAMES}).")
+        sys.exit(1)
 
 def display_video_timeline(total_frames, deadzones, selected_frames):
     # Create the base timeline
     timeline = ['-'] * total_frames
-    
+
     # Mark deadzones
     for start, end in deadzones:
         for i in range(start, min(end + 1, total_frames)):
             timeline[i] = '#'
-    
+
     # Mark selected frames
     for frame in selected_frames:
         if 0 <= frame < total_frames:
             timeline[frame] = 'X'
-    
+
     # Convert timeline to string and add markers
     timeline_str = ''.join(timeline)
     marker_line = ''.join([str(i % 10) for i in range(total_frames)])
-    
+
     print(timeline_str)
 
-dist_images()
-display_video_timeline(TOTAL_FRAMES, deadzones, image)
+if not ALL_FRAMES:
+    dist_images()
+    display_video_timeline(TOTAL_FRAMES, deadzones, image)
+else:
+    print(f"Including all {TOTAL_FRAMES} frames in montage")
 if INTERACTIVE_MODE:
     while True:
         print("1. Add deadzone  2. Show frames between points  3. Generate/Regenerate montage")
