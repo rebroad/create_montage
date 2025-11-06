@@ -45,18 +45,19 @@ def load_deadzones():
 
 COLS, ROWS = 0, 0
 
-def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None):
-    available_frames = available_frames or AVAILABLE_FRAMES
+def find_optimal_grid(target_rows=None, target_cols=None):
+    global ALL_FRAMES, TOTAL_FRAMES, ASPECT_RATIO
+    num_frames = TOTAL_FRAMES if ALL_FRAMES else AVAILABLE_FRAMES
     print(f"Searching for optimal grid for {WIDTH}:{HEIGHT} aspect ratio")
     best_diff = float('inf')
     TARGET_RATIO = WIDTH / HEIGHT
-    start_y, end_y = (target_rows, target_rows) if target_rows else (1, available_frames)
+    start_y, end_y = (target_rows, target_rows) if target_rows else (1, num_frames)
     for y in range(start_y, end_y + 1):
         LAST_X_DIFF = float('inf')
         start_x = int((y * TARGET_RATIO * FRAME_HEIGHT) / FRAME_WIDTH)
-        end_x = target_cols if target_cols else available_frames // y
+        end_x = target_cols if target_cols else num_frames // y
         for x in range(start_x, end_x + 1):
-            if x * y > available_frames:
+            if x * y > num_frames:
                 break
             grid_ratio = (x * FRAME_WIDTH) / (y * FRAME_HEIGHT)
             diff = (grid_ratio - TARGET_RATIO) ** 2
@@ -69,6 +70,23 @@ def find_optimal_grid(available_frames=None, target_rows=None, target_cols=None)
                 break
             print(f"x={x} y={y} diff={diff:.10f}")
             LAST_X_DIFF = diff
+
+    # In ALL_FRAMES mode, ensure grid is large enough to fit all frames
+    if ALL_FRAMES and best_grid[0] * best_grid[1] < TOTAL_FRAMES:
+        COLS, ROWS = best_grid
+        # Expand while maintaining aspect ratio as much as possible
+        while COLS * ROWS < TOTAL_FRAMES:
+            test_cols = COLS + 1
+            test_rows = ROWS + 1
+            ratio_cols = (test_cols * FRAME_WIDTH) / (ROWS * FRAME_HEIGHT)
+            ratio_rows = (COLS * FRAME_WIDTH) / (test_rows * FRAME_HEIGHT)
+            diff_cols = abs(ratio_cols - TARGET_RATIO)
+            diff_rows = abs(ratio_rows - TARGET_RATIO)
+            if diff_cols < diff_rows:
+                COLS = test_cols
+            else:
+                ROWS = test_rows
+        best_grid = (COLS, ROWS)
 
     return best_grid
 
@@ -390,7 +408,7 @@ if "MSYS2" in result.stdout:
     use_cygpath = True
 
 VID = None
-ASPECT_RATIO = None
+ASPECT_RATIO = "16:9"
 GRID = None
 START_IMAGE = None
 END_IMAGE = None
@@ -463,18 +481,11 @@ else:
     RESIZE = ""
 print(f"Frame dimensions: {FRAME_WIDTH} by {FRAME_HEIGHT}")
 
-if ASPECT_RATIO:
-    WIDTH, HEIGHT = map(int, ASPECT_RATIO.split(':'))
-else:
-    WIDTH, HEIGHT = 16, 9
+WIDTH, HEIGHT = map(int, ASPECT_RATIO.split(':'))
 TARGET_RATIO = WIDTH / HEIGHT
 print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
 
 load_deadzones()
-
-# In ALL_FRAMES mode, ignore deadzones and use all frames
-if ALL_FRAMES:
-    AVAILABLE_FRAMES = TOTAL_FRAMES
 
 # Calculate grid based on user input
 if GRID:
@@ -484,8 +495,6 @@ if GRID:
         COLS, ROWS = find_optimal_grid(target_rows=int(GRID[1:]))
     else:
         COLS, ROWS = map(int, GRID.split('x'))
-elif ASPECT_RATIO:
-    COLS, ROWS = find_optimal_grid()
 else:
     # Default: find grid with 2 rows
     if not ALL_FRAMES:
@@ -495,19 +504,6 @@ else:
 # Handle ALL_FRAMES mode specifics
 if ALL_FRAMES:
     print("All frames mode: including all frames in montage")
-    # If grid is still too small and we have an aspect ratio, recalculate
-    if COLS * ROWS < TOTAL_FRAMES:
-        if ASPECT_RATIO:
-            # Recalculate grid respecting aspect ratio to fit all frames
-            COLS, ROWS = find_optimal_grid()
-        else:
-            # No aspect ratio constraint, so we can expand the grid
-            while COLS * ROWS < TOTAL_FRAMES:
-                if COLS <= ROWS:
-                    COLS += 1
-                else:
-                    ROWS += 1
-
     TOTAL_IMAGES = COLS * ROWS
     # Set image array to all frame numbers (no padding - empty slots will be blank)
     image = list(range(TOTAL_FRAMES))
