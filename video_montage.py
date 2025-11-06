@@ -472,24 +472,25 @@ print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
 
 load_deadzones()
 
-# Determine available frames for grid calculation
-available_frames_for_grid = TOTAL_FRAMES if ALL_FRAMES else AVAILABLE_FRAMES
+# In ALL_FRAMES mode, ignore deadzones and use all frames
+if ALL_FRAMES:
+    AVAILABLE_FRAMES = TOTAL_FRAMES
 
 # Calculate grid based on user input
 if GRID:
     if GRID.endswith('x'):
-        COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid, target_cols=int(GRID[:-1]))
+        COLS, ROWS = find_optimal_grid(target_cols=int(GRID[:-1]))
     elif GRID.startswith('x'):
-        COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid, target_rows=int(GRID[1:]))
+        COLS, ROWS = find_optimal_grid(target_rows=int(GRID[1:]))
     else:
         COLS, ROWS = map(int, GRID.split('x'))
 elif ASPECT_RATIO:
-    COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid)
+    COLS, ROWS = find_optimal_grid()
 else:
     # Default: find grid with 2 rows
     if not ALL_FRAMES:
         print("No grid or aspect ratio specified. Using default 2 row grid.")
-    COLS, ROWS = find_optimal_grid(available_frames=available_frames_for_grid, target_rows=2)
+    COLS, ROWS = find_optimal_grid(target_rows=2)
 
 # Handle ALL_FRAMES mode specifics
 if ALL_FRAMES:
@@ -498,7 +499,7 @@ if ALL_FRAMES:
     if COLS * ROWS < TOTAL_FRAMES:
         if ASPECT_RATIO:
             # Recalculate grid respecting aspect ratio to fit all frames
-            COLS, ROWS = find_optimal_grid(available_frames=TOTAL_FRAMES)
+            COLS, ROWS = find_optimal_grid()
         else:
             # No aspect ratio constraint, so we can expand the grid
             while COLS * ROWS < TOTAL_FRAMES:
