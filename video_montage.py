@@ -5,7 +5,6 @@ import sys
 import subprocess
 import tempfile
 import shutil
-import glob
 import math
 
 def convert_path(path):
@@ -18,30 +17,18 @@ def convert_path(path):
     return path
 
 def get_dimensions(file_path):
-    if file_path.lower().endswith('.gif'):
-        # Use ImageMagick identify for GIFs
-        cmd = ["identify", "-format", "%wx%h", convert_path(file_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        dimensions = result.stdout.strip().split('\n')[0]  # Get first frame dimensions
-        if not dimensions:
-            print(f"Error: Unable to get dimensions for {file_path}")
-            print(f"identify output: {result.stderr}")
-            sys.exit(1)
-        width, height = map(int, dimensions.split('x'))
-        return width, height
-    else:
-        cmd = [
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", convert_path(file_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        dimensions = result.stdout.strip()
-        if not dimensions:
-            print(f"Error: Unable to get dimensions for {file_path}")
-            print(f"ffprobe output: {result.stderr}")
-            sys.exit(1)
-        width, height = map(int, dimensions.split('x'))
-        return width, height
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", convert_path(file_path)
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    dimensions = result.stdout.strip()
+    if not dimensions:
+        print(f"Error: Unable to get dimensions for {file_path}")
+        print(f"ffprobe output: {result.stderr}")
+        sys.exit(1)
+    width, height = map(int, dimensions.split('x'))
+    return width, height
 
 def load_deadzones():
     global AVAILABLE_FRAMES, deadzones
@@ -355,8 +342,8 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
 
         for i in range(empty_count):
             blank_frame = os.path.join(TEMP, f"blank_{i}.png")
-            # Create transparent blank frame using ImageMagick
-            cmd = ["convert", "-size", f"{blank_width}x{blank_height}", "xc:transparent", convert_path(blank_frame)]
+            # Create transparent blank frame using ffmpeg
+            cmd = ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=c=black@0:s={blank_width}x{blank_height}:d=1", "-frames:v", "1", convert_path(blank_frame)]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"Error: Failed to create blank frame. Error: {result.stderr}")
@@ -445,44 +432,26 @@ TEMP = tempfile.mkdtemp()
 LOG = os.path.join(TEMP, "ffmpeg_log.log")
 
 print(f"Determining video information for: {VID}")
-is_gif = VID.lower().endswith('.gif')
-
-if is_gif:
-    # Use ImageMagick identify to count GIF frames
-    # First try: use identify to get frame count
-    cmd = ["identify", convert_path(VID)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Error running identify. Return code: {result.returncode}")
-        print(f"Error output: {result.stderr}")
-        sys.exit(1)
-    # Count lines in output (each line is a frame)
-    frame_lines = [line for line in result.stdout.strip().split('\n') if line.strip()]
-    TOTAL_FRAMES = len(frame_lines)
-    if TOTAL_FRAMES == 0:
-        TOTAL_FRAMES = 1
-else:
-    cmd = [
-        "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", convert_path(VID)
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Error running ffprobe. Return code: {result.returncode}")
-        print(f"Error output: {result.stderr}")
-        sys.exit(1)
+cmd = [
+    "ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+    "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", convert_path(VID)
+]
+result = subprocess.run(cmd, capture_output=True, text=True)
+if result.returncode != 0:
+    print(f"Error running ffprobe. Return code: {result.returncode}")
+    print(f"Error output: {result.stderr}")
+    sys.exit(1)
 
 stdout = result.stdout.strip()
 if not stdout:
     print("Error: ffprobe didn't return any output.")
     sys.exit(1)
-else:
-    try:
-        TOTAL_FRAMES = int(stdout)
-    except ValueError:
-        print(f"Error: Unexpected output from ffprobe: '{stdout}'")
-        print("Unable to determine frame count. Please check if the video file is valid.")
-        sys.exit(1)
+try:
+    TOTAL_FRAMES = int(stdout)
+except ValueError:
+    print(f"Error: Unexpected output from ffprobe: '{stdout}'")
+    print("Unable to determine frame count. Please check if the video file is valid.")
+    sys.exit(1)
 
 print(f"Total frames determined: {TOTAL_FRAMES}")
 
