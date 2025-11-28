@@ -395,11 +395,35 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
         print(result.stderr)
         sys.exit(1)
 
+def print_usage():
+    """Print usage information and exit."""
+    print(f"Usage: {sys.argv[0]} <video.mp4|animation.gif> [options]")
+    print("\nRequired arguments:")
+    print("  <video.mp4|animation.gif>  Input video or GIF file")
+    print("\nOptional arguments:")
+    print("  <aspect_ratio>             Target aspect ratio (e.g., 16:9, 4:3)")
+    print("  <NxN | Nx | xN>            Grid dimensions (e.g., 10x5, 10x, x5)")
+    print("  <before_image.png>         Image to use before video (sets frame size)")
+    print("  <after_image.png>          Image to use after video (sets frame size)")
+    print("\nOptions:")
+    print("  -i, --interactive          Interactive mode")
+    print("  -n, --numbers              Show frame numbers on extracted frames")
+    print("  -a, --all-frames           Include ALL frames in the montage")
+    print("  -h, --help                 Show this help message and exit")
+    print("\nExamples:")
+    print(f"  {sys.argv[0]} video.mp4")
+    print(f"  {sys.argv[0]} video.mp4 16:9 10x5")
+    print(f"  {sys.argv[0]} video.mp4 --all-frames")
+    print(f"  {sys.argv[0]} video.mp4 -i")
+    sys.exit(0)
+
 # Main execution
 if len(sys.argv) < 2:
-    print(f"Usage: {sys.argv[0]} <video.mp4|animation.gif> [aspect_ratio] [NxN | Nx | xN] [before_image.png] [after_image.png] [-i] [-n] [-a]")
-    print("  -a, --all-frames: Include ALL frames in the montage (not just selected grid frames)")
-    sys.exit(1)
+    print_usage()
+
+# Check for help flags first, before any processing
+if '--help' in sys.argv or '-h' in sys.argv:
+    print_usage()
 
 use_cygpath = False
 result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
@@ -415,27 +439,71 @@ END_IMAGE = None
 INTERACTIVE_MODE = False
 SHOW_NUMBERS = False
 ALL_FRAMES = False
+unknown_args = []
 
 for arg in sys.argv[1:]:
-    if arg.endswith('.mp4') or arg.endswith('.gif'):
-        VID = arg
+    # Skip help flags (already handled)
+    if arg in ('-h', '--help'):
+        continue
+    elif arg.endswith('.mp4') or arg.endswith('.gif'):
+        if VID is None:
+            VID = arg
+        else:
+            print(f"Error: Multiple video files specified: '{VID}' and '{arg}'")
+            print("Only one video file is allowed.")
+            sys.exit(1)
     elif arg in ('-a', '--all-frames'):
         ALL_FRAMES = True
-    elif ':' in arg:
-        ASPECT_RATIO = arg
-    elif 'x' in arg:
-        GRID = arg
-    elif arg == '-i':
+    elif arg in ('-i', '--interactive'):
         INTERACTIVE_MODE = True
-    elif arg == '-n':
+    elif arg in ('-n', '--numbers'):
         SHOW_NUMBERS = True
+    elif ':' in arg and not arg.startswith('-') and len(arg.split(':')) == 2:
+        # Aspect ratio (contains colon, not a flag, format: N:M)
+        try:
+            parts = arg.split(':')
+            if parts[0].isdigit() and parts[1].isdigit():
+                ASPECT_RATIO = arg
+            else:
+                unknown_args.append(arg)
+        except:
+            unknown_args.append(arg)
+    elif 'x' in arg and not arg.startswith('-'):
+        # Grid specification - validate format
+        valid_grid = False
+        if arg.endswith('x'):  # Format: Nx
+            if arg[:-1].isdigit():
+                valid_grid = True
+        elif arg.startswith('x'):  # Format: xN
+            if arg[1:].isdigit():
+                valid_grid = True
+        elif 'x' in arg:  # Format: NxM
+            parts = arg.split('x')
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                valid_grid = True
+        if valid_grid:
+            GRID = arg
+        else:
+            unknown_args.append(arg)
+    elif arg.startswith('-'):
+        # Unknown flag
+        unknown_args.append(arg)
     elif START_IMAGE is None:
+        # First positional argument that's not a video - treat as before_image
         START_IMAGE = arg
     else:
+        # Second positional argument - treat as after_image
         END_IMAGE = arg
+
+# Handle unknown arguments
+if unknown_args:
+    print(f"Error: Unknown argument(s): {', '.join(unknown_args)}")
+    print("\nUse --help or -h to see usage information.")
+    sys.exit(1)
 
 if VID is None:
     print("Error: Video file not specified.")
+    print("\nUse --help or -h to see usage information.")
     sys.exit(1)
 VID = convert_path(VID)
 if not os.path.isfile(VID):
