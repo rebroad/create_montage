@@ -16,6 +16,36 @@ def convert_path(path):
             return path
     return path
 
+def find_system_font():
+    """Find a system font to use for text overlay."""
+    # Try to use fontconfig to find a sans-serif font
+    try:
+        result = subprocess.run(['fc-match', '-f', '%{file}\n', 'sans'],
+                               capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            font_path = result.stdout.strip().split('\n')[0]
+            if font_path and os.path.exists(font_path):
+                return font_path
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Fallback to common font paths
+    common_fonts = [
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
+        '/usr/share/fonts/TTF/DejaVuSans.ttf',
+        '/System/Library/Fonts/Helvetica.ttc',  # macOS
+        'C:/Windows/Fonts/arial.ttf',  # Windows
+    ]
+
+    for font_path in common_fonts:
+        if os.path.exists(font_path):
+            return font_path
+
+    # If no font found, return None (drawtext will use built-in font)
+    return None
+
 def get_dimensions(file_path):
     cmd = [
         "ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -332,12 +362,20 @@ def generate_montage(output_file, start_frame=0, end_frame=None, cols=None, rows
             # Font size proportional to frame height (about 4% of height, minimum 16)
             fontsize = max(16, int(final_height * 0.04))
             text = str(frame_num)
-            filter_parts.append(f"drawtext=fontfile=/path/to/font.ttf:fontsize={fontsize}:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{text}'")
+            # Use cached system font
+            font_option = f"fontfile={convert_path(SYSTEM_FONT)}:" if SYSTEM_FONT else ""
+            filter_parts.append(f"drawtext={font_option}fontsize={fontsize}:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=10:y=10:text='{text}'")
 
-        filter = ":".join(filter_parts)
+        filter = ",".join(filter_parts)
 
         # Use ffmpeg for both videos and GIFs
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", convert_path(VID), "-vf", filter, "-vsync", "vfr", convert_path(out_frame)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
+        if result.returncode != 0:
+            print(f"Error: Failed to extract frame {i} (frame {frame_num})")
+            print(f"FFmpeg error: {result.stderr}")
+            print(f"Filter used: {filter}")
+            sys.exit(1)
 
         if not os.path.exists(out_frame):
             print(f"Error: Failed to extract frame {i}. See {LOG}")
@@ -439,13 +477,29 @@ END_IMAGE = None
 INTERACTIVE_MODE = False
 SHOW_NUMBERS = False
 ALL_FRAMES = False
+SYSTEM_FONT = None  # Will be set later if SHOW_NUMBERS is enabled
 unknown_args = []
 
+# Expand combined short flags (e.g., -an becomes -a -n)
+expanded_args = []
 for arg in sys.argv[1:]:
-    # Skip help flags (already handled)
+    # Skip help flags (already handled, but check combined flags too)
     if arg in ('-h', '--help'):
         continue
-    elif arg.endswith('.mp4') or arg.endswith('.gif'):
+    # Check for combined short flags (starts with single -, has multiple chars, not a long option)
+    elif arg.startswith('-') and not arg.startswith('--') and len(arg) > 2:
+        # Expand combined flags (e.g., -an becomes -a, -n)
+        for char in arg[1:]:
+            expanded_args.append(f'-{char}')
+    else:
+        expanded_args.append(arg)
+
+# Check if help was requested in combined flags (e.g., -han)
+if '-h' in expanded_args:
+    print_usage()
+
+for arg in expanded_args:
+    if arg.endswith('.mp4') or arg.endswith('.gif'):
         if VID is None:
             VID = arg
         else:
@@ -548,6 +602,14 @@ else:
     FRAME_WIDTH, FRAME_HEIGHT = get_dimensions(VID)
     RESIZE = ""
 print(f"Frame dimensions: {FRAME_WIDTH} by {FRAME_HEIGHT}")
+
+# Find system font if showing numbers
+if SHOW_NUMBERS:
+    SYSTEM_FONT = find_system_font()
+    if SYSTEM_FONT:
+        print(f"Using font: {SYSTEM_FONT}")
+    else:
+        print("Warning: No system font found, using built-in font for text overlay")
 
 WIDTH, HEIGHT = map(int, ASPECT_RATIO.split(':'))
 TARGET_RATIO = WIDTH / HEIGHT
