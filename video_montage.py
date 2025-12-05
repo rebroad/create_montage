@@ -470,7 +470,7 @@ if "MSYS2" in result.stdout:
     use_cygpath = True
 
 VID = None
-ASPECT_RATIO = "16:9"
+ASPECT_RATIO = None
 GRID = None
 START_IMAGE = None
 END_IMAGE = None
@@ -611,7 +611,8 @@ if SHOW_NUMBERS:
     else:
         print("Warning: No system font found, using built-in font for text overlay")
 
-WIDTH, HEIGHT = map(int, ASPECT_RATIO.split(':'))
+aspect_ratio_str = ASPECT_RATIO if ASPECT_RATIO else "16:9"
+WIDTH, HEIGHT = map(int, aspect_ratio_str.split(':'))
 TARGET_RATIO = WIDTH / HEIGHT
 print(f"Target aspect ratio: {WIDTH}:{HEIGHT} ({TARGET_RATIO:.10f})")
 
@@ -625,8 +626,13 @@ if GRID:
         COLS, ROWS = find_optimal_grid(target_rows=int(GRID[1:]))
     else:
         COLS, ROWS = map(int, GRID.split('x'))
+elif ASPECT_RATIO:
+    # Aspect ratio was specified, search all row counts to find optimal grid
+    if not ALL_FRAMES:
+        print("No grid specified. Searching all row counts to find optimal grid.")
+    COLS, ROWS = find_optimal_grid()
 else:
-    # Default: find grid with 2 rows
+    # Neither grid nor aspect ratio specified, use default 2 row grid
     if not ALL_FRAMES:
         print("No grid or aspect ratio specified. Using default 2 row grid.")
     COLS, ROWS = find_optimal_grid(target_rows=2)
